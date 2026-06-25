@@ -1,0 +1,6 @@
+{
+  "name": "MYRA Luxury",
+  "description": "A premium luxury lifestyle brand website featuring fragrances, leather accessories, and handmade self-care products.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

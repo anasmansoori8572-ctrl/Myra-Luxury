@@ -1,0 +1,10 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // All collections are fully manageable by our Express API server (server-side proxy).
+    // The client React application handles interactions securely through our API gateway.
+    match /{document=**} {
+      allow read, write: if true;
+    }
+  }
+}

@@ -1,0 +1,132 @@
+@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&family=Inter:wght@300;400;500;600;700&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-serif: "Cormorant Garamond", Georgia, serif;
+  --font-sans: "Inter", system-ui, sans-serif;
+  
+  --color-primary-cream: #FDFBF7;
+  --color-primary-sand: #F7EFE5;
+  --color-luxury-gold: #D4AF37;
+  --color-luxury-gold-light: #F3E5AB;
+  --color-lavender-pastel: #E8DFF5;
+  --color-rose-pastel: #FCE1E4;
+  --color-peach-pastel: #FCF4DD;
+  --color-aqua-pastel: #DDFFF7;
+  --color-sage-pastel: #E2F0CB;
+  --color-leather-tan: #C68B59;
+  --color-leather-dark: #4A3B32;
+  --color-charcoal: #2C2C2C;
+}
+
+html {
+  scroll-behavior: smooth;
+  font-family: var(--font-sans);
+  background-color: var(--color-primary-cream);
+  color: var(--color-charcoal);
+}
+
+body {
+  overflow-x: hidden;
+  background-color: var(--color-primary-cream);
+}
+
+/* Custom premium scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #FDFBF7;
+}
+::-webkit-scrollbar-thumb {
+  background: #C68B59;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #4A3B32;
+}
+
+/* Glassmorphic Utilities */
+.glass-panel {
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.4);
+}
+
+.glass-panel-dark {
+  background: rgba(44, 44, 44, 0.75);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.glass-navbar {
+  background: rgba(255, 255, 255, 0.65);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.3);
+}
+
+/* Custom Soft Shimmer Effect */
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.shimmer-text {
+  background: linear-gradient(90deg, #2C2C2C 0%, #C68B59 50%, #2C2C2C 100%);
+  background-size: 200% auto;
+  color: transparent;
+  background-clip: text;
+  -webkit-background-clip: text;
+  animation: shimmer 6s linear infinite;
+}
+
+/* Botanical patterns / Watermarks */
+.lotus-bg {
+  background-image: radial-gradient(circle at 100% 150%, rgba(232, 223, 245, 0.4) 24%, rgba(252, 225, 228, 0.3) 50%, transparent 100%);
+}
+
+/* Cinematic slow-zooming wave visual */
+@keyframes luxuryZoom {
+  0% { transform: scale(1.02) translateY(0); }
+  50% { transform: scale(1.09) translateY(-1%); }
+  100% { transform: scale(1.02) translateY(0); }
+}
+
+.luxury-banner-zoom {
+  animation: luxuryZoom 18s ease-in-out infinite;
+}
+
+/* Premium physical gloss sheen diagonal sweep */
+@keyframes luxurySheen {
+  0% { transform: translateX(-150%) skewX(-20deg); }
+  25% { transform: translateX(250%) skewX(-20deg); }
+  100% { transform: translateX(250%) skewX(-20deg); }
+}
+
+.luxury-banner-sheen {
+  background: linear-gradient(
+    to right,
+    rgba(255, 255, 255, 0) 0%,
+    rgba(255, 255, 255, 0.05) 15%,
+    rgba(255, 255, 255, 0.25) 50%,
+    rgba(255, 255, 255, 0.05) 85%,
+    rgba(255, 255, 255, 0) 100%
+  );
+  animation: luxurySheen 9s cubic-bezier(0.3, 0.1, 0.3, 1) infinite;
+}
+
+/* Elegant ambient gold hour breathing pulse (no deformation/clipping) */
+@keyframes luxuryBreathe {
+  0% { filter: brightness(1.0) contrast(1.0); }
+  50% { filter: brightness(1.04) contrast(1.02); }
+  100% { filter: brightness(1.0) contrast(1.0); }
+}
+
+.luxury-banner-pulse {
+  animation: luxuryBreathe 8s ease-in-out infinite;
+}
+
+

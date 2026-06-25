@@ -1,0 +1,135 @@
+{
+  "entities": {
+    "shippingSettings": {
+      "title": "Shipping Settings",
+      "description": "Atelier warehouse and shipping parameters",
+      "type": "object",
+      "properties": {
+        "originPin": { "type": "string" },
+        "freeShippingThreshold": { "type": "number" },
+        "baseCodCharge": { "type": "number" },
+        "markupPercentage": { "type": "number" },
+        "enablePromoFreeShipping": { "type": "boolean" },
+        "warehouseName": { "type": "string" },
+        "warehouseAddress": { "type": "string" },
+        "warehouseCity": { "type": "string" },
+        "warehouseState": { "type": "string" }
+      }
+    },
+    "promoCodes": {
+      "title": "Promo Codes",
+      "description": "Discount code definitions",
+      "type": "object",
+      "properties": {
+        "code": { "type": "string" },
+        "type": { "type": "string" },
+        "value": { "type": "number" },
+        "active": { "type": "boolean" },
+        "description": { "type": "string" }
+      }
+    },
+    "orders": {
+      "title": "Orders",
+      "description": "Customer purchase orders",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "orderStatus": { "type": "string" },
+        "status": { "type": "string" },
+        "shippingDetails": { "type": "object" }
+      }
+    },
+    "shipments": {
+      "title": "Shipments",
+      "description": "Delhivery shipment and tracking records",
+      "type": "object",
+      "properties": {
+        "awb": { "type": "string" },
+        "orderId": { "type": "string" },
+        "status": { "type": "string" }
+      }
+    },
+    "emailLogs": {
+      "title": "Email Logs",
+      "description": "Dispatched email records",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "to": { "type": "string" },
+        "subject": { "type": "string" }
+      }
+    },
+    "products": {
+      "title": "Products",
+      "description": "Boutique catalog products",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" }
+      }
+    },
+    "reviews": {
+      "title": "Reviews",
+      "description": "Product reviews",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "rating": { "type": "number" }
+      }
+    },
+    "locations": {
+      "title": "Locations",
+      "description": "Boutique locations",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" }
+      }
+    },
+    "users": {
+      "title": "Users",
+      "description": "Boutique patrons and users",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" }
+      }
+    }
+  },
+  "firestore": {
+    "shippingSettings": {
+      "schema": "shippingSettings",
+      "description": "Atelier warehouse and shipping settings"
+    },
+    "promoCodes": {
+      "schema": "promoCodes",
+      "description": "Promo codes database"
+    },
+    "orders": {
+      "schema": "orders",
+      "description": "Customer orders"
+    },
+    "shipments": {
+      "schema": "shipments",
+      "description": "Shipping consignments"
+    },
+    "emailLogs": {
+      "schema": "emailLogs",
+      "description": "Email log traces"
+    },
+    "products": {
+      "schema": "products",
+      "description": "Product catalog"
+    },
+    "reviews": {
+      "schema": "reviews",
+      "description": "Reviews collection"
+    },
+    "locations": {
+      "schema": "locations",
+      "description": "Store locations"
+    },
+    "users": {
+      "schema": "users",
+      "description": "User profiles"
+    }
+  }
+}

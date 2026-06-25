@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>MYRA Luxury | Premium Fragrances, Leather & Handcrafted Essentials</title>
+    <script>
+      (function() {
+        const isBenignError = (msg) => {
+          if (!msg) return true; // Silence empty or uncaught null errors
+          const lower = String(msg).toLowerCase();
+          return (
+            lower.includes("websocket") ||
+            lower.includes("vite") ||
+            lower.includes("hmr") ||
+            lower.includes("socket") ||
+            lower.includes("extension") ||
+            lower.includes("failed to fetch")
+          );
+        };
+
+        window.addEventListener("unhandledrejection", function(event) {
+          const reason = event.reason ? (event.reason.message || String(event.reason)) : "";
+          if (isBenignError(reason)) {
+            event.preventDefault();
+            event.stopPropagation();
+          }
+        }, true);
+
+        window.addEventListener("error", function(event) {
+          const message = event.message || "";
+          if (isBenignError(message)) {
+            event.preventDefault();
+            event.stopPropagation();
+          }
+        }, true);
+
+        // Standard onerror fallback
+        window.onerror = function(message, source, lineno, colno, error) {
+          const msg = message || (error ? error.message : "");
+          if (isBenignError(msg)) {
+            return true; // silences the error
+          }
+        };
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
+
