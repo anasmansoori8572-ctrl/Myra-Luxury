@@ -476,10 +476,18 @@ app.get("/api/debug-firebase", async (req, res) => {
   }
 });
 
-// 1. Get all orders
+// 1. Get all orders (with optional filtering for secure user queries)
 app.get("/api/orders", async (req, res) => {
   try {
-    const list = await firestoreGetCollection("orders");
+    const { userId, email } = req.query;
+    let list = await firestoreGetCollection("orders");
+
+    if (userId) {
+      list = list.filter(o => o.userId === userId || o.uid === userId);
+    } else if (email) {
+      list = list.filter(o => o.emailAddress?.toLowerCase() === (email as string).toLowerCase());
+    }
+
     const sorted = list.sort((a, b) => {
       const d1 = a.orderDate || a.date || "";
       const d2 = b.orderDate || b.date || "";
@@ -630,6 +638,7 @@ app.post("/api/orders", async (req, res) => {
     const fullOrder = {
       // Direct requirement items
       id: finalOrderId,
+      userId: order.userId || order.uid || null,
       customerName,
       phoneNumber: phone,
       emailAddress: email,

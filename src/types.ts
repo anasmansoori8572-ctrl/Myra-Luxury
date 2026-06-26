@@ -78,6 +78,7 @@ export interface Review {
   comment: string;
   verified: boolean;
   image?: string;
+  userId?: string;
 }
 
 export interface ContactMessage {

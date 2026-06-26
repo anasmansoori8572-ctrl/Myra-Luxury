@@ -1,12 +1,13 @@
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import { Product, Review } from "../types";
 import { X, Star, Upload, ArrowLeft, CheckCircle, Image as ImageIcon } from "lucide-react";
+import { useAuth } from "../lib/authContext";
 
 interface WriteReviewModalProps {
   isOpen: boolean;
   product: Product;
   onClose: () => void;
-  onSubmitReview: (review: Omit<Review, "id" | "date" | "verified"> & { image?: string }) => void;
+  onSubmitReview: (review: Omit<Review, "id" | "date" | "verified"> & { image?: string; userId?: string }) => void;
   triggerToast?: (message: string) => void;
 }
 
@@ -17,6 +18,7 @@ export const WriteReviewModal: React.FC<WriteReviewModalProps> = ({
   onSubmitReview,
   triggerToast
 }) => {
+  const { user } = useAuth();
   const [step, setStep] = useState<number>(1);
   const [rating, setRating] = useState<number>(0);
   const [hoverRating, setHoverRating] = useState<number>(0);
@@ -25,6 +27,16 @@ export const WriteReviewModal: React.FC<WriteReviewModalProps> = ({
   const [imageBase64, setImageBase64] = useState<string>("");
   const [imageFileName, setImageFileName] = useState<string>("");
   const [isDragOver, setIsDragOver] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (isOpen) {
+      if (user && user.displayName) {
+        setAuthorName(user.displayName);
+      } else {
+        setAuthorName("");
+      }
+    }
+  }, [user, isOpen]);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -120,7 +132,8 @@ export const WriteReviewModal: React.FC<WriteReviewModalProps> = ({
       author: authorName.trim(),
       rating,
       comment: comment.trim(),
-      image: imageBase64 || undefined
+      image: imageBase64 || undefined,
+      userId: user?.uid
     });
     
     // Close and reset

@@ -6,6 +6,7 @@ import { ProductDetailModal } from "./components/ProductDetailModal";
 import { CartDrawer } from "./components/CartDrawer";
 import { ProfileModal } from "./components/ProfileModal";
 import { AdminPortal } from "./components/AdminPortal";
+import { useAuth } from "./lib/authContext";
 import { 
   Search, 
   ShoppingBag, 
@@ -35,6 +36,8 @@ import {
 } from "lucide-react";
 
 export default function App() {
+  const { user, profile, toggleWishlistItem } = useAuth();
+
   // --- Hero Section Adaptive Background Banner Measuring ---
   const heroRef = useRef<HTMLElement>(null);
   const [heroBottom, setHeroBottom] = useState<number>(1000);
@@ -324,6 +327,22 @@ export default function App() {
   };
 
   // --- Effects ---
+  // Synchronize wishlist from real Firebase Auth Profile
+  useEffect(() => {
+    if (profile && profile.wishlist) {
+      setWishlist(profile.wishlist);
+    } else if (!user) {
+      try {
+        const saved = localStorage.getItem("myra_wishlist");
+        if (saved) {
+          setWishlist(JSON.parse(saved));
+        } else {
+          setWishlist([]);
+        }
+      } catch {}
+    }
+  }, [profile, user]);
+
   // Persist wishlist changes
   useEffect(() => {
     safeSetLocalStorage("myra_wishlist", JSON.stringify(wishlist));
@@ -464,18 +483,23 @@ export default function App() {
     }, 3500);
   };
 
-  const toggleWishlist = (productId: string) => {
-    setWishlist(prev => {
-      const exists = prev.includes(productId);
-      const updated = exists 
-        ? prev.filter(id => id !== productId) 
-        : [...prev, productId];
-      
-      const prod = dbProducts.find(p => p.id === productId);
-      const nameStr = prod ? prod.name : "Item";
-      triggerToast(exists ? `Removed "${nameStr}" from your wishlist.` : `Added "${nameStr}" to your wishlist.`);
-      return updated;
-    });
+  const toggleWishlist = async (productId: string) => {
+    const prod = dbProducts.find(p => p.id === productId);
+    const nameStr = prod ? prod.name : "Item";
+
+    if (user) {
+      const added = await toggleWishlistItem(productId);
+      triggerToast(added ? `Added "${nameStr}" to your wishlist.` : `Removed "${nameStr}" from your wishlist.`);
+    } else {
+      setWishlist(prev => {
+        const exists = prev.includes(productId);
+        const updated = exists 
+          ? prev.filter(id => id !== productId) 
+          : [...prev, productId];
+        triggerToast(exists ? `Removed "${nameStr}" from your wishlist.` : `Added "${nameStr}" to your wishlist. Sign in to save to your cloud account.`);
+        return updated;
+      });
+    }
   };
 
   const isWishlisted = (productId: string) => wishlist.includes(productId);

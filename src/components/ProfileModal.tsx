@@ -25,9 +25,9 @@ import {
   AlertTriangle,
   ChevronDown,
   ChevronUp,
-  Chrome,
-  Apple
+  Chrome
 } from "lucide-react";
+import { useAuth } from "../lib/authContext";
 
 interface ProfileModalProps {
   isOpen: boolean;
@@ -51,38 +51,35 @@ interface MemberInfo {
 }
 
 export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose, triggerToast, initialTab }) => {
-  const [isLoggedIn, setIsLoggedIn] = useState<boolean>(() => {
-    try {
-      const saved = localStorage.getItem("myra_member_logged_in");
-      return saved === "true";
-    } catch {
-      return false;
-    }
-  });
+  const {
+    user,
+    profile,
+    memberInfo,
+    isLoggedIn,
+    loginWithEmail,
+    signUpWithEmail,
+    loginWithGoogle,
+    logout,
+    updateProfileInFirestore,
+    sendVerification: sendVerificationEmail,
+    resetPassword: resetPasswordEmail
+  } = useAuth();
 
-  const [member, setMember] = useState<MemberInfo>(() => {
-    try {
-      const saved = localStorage.getItem("myra_member_info");
-      if (saved) {
-        return JSON.parse(saved);
-      }
-    } catch {}
-    
-    // Default logged in luxury member pre-fill for stunning initial experience
-    return {
-      name: "Lady Elena Rostova",
-      email: "elena.rostova@luxury.com",
-      phone: "+39 333 4839 902",
-      address: "Piazza di Spagna, 14, Rome, Italy 00187",
-      preferredCategory: "Perfumes",
-      scentNotes: "Rose, Warm Amberwood & White Musk",
-      tier: "Maison Elite Client",
-      loyaltyPoints: 1250,
-      memberId: "MYRA-9042-STD",
-      memberSince: "May 2024",
-      accountType: "standard"
-    };
-  });
+  const defaultMember: MemberInfo = {
+    name: "Atelier Patron",
+    email: "",
+    phone: "",
+    address: "",
+    preferredCategory: "Perfumes",
+    scentNotes: "Warm Saffron, Damask Rose & Oud Noir",
+    tier: "Standard Client",
+    loyaltyPoints: 0,
+    memberId: "",
+    memberSince: "",
+    accountType: "standard"
+  };
+
+  const member = memberInfo || defaultMember;
 
   const [companyName, setCompanyName] = useState<string>("MYRA");
   const [companySubtitle, setCompanySubtitle] = useState<string>("LUXURY");
@@ -134,6 +131,20 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose, tri
     };
   }, []);
 
+  // Fetch real-time orders from server when logged in
+  useEffect(() => {
+    if (isOpen && isLoggedIn && user) {
+      fetch(`/api/orders?userId=${user.uid}`)
+        .then(res => res.json())
+        .then(data => {
+          if (Array.isArray(data)) {
+            setOrders(data);
+          }
+        })
+        .catch(err => console.error("Error loading server-side secure orders:", err));
+    }
+  }, [isOpen, isLoggedIn, user, activeTab]);
+
   // Switch between Standard and VIP registration modes in registration screen
   const [regAccountType, setRegAccountType] = useState<"standard" | "vip">("standard");
 
@@ -163,8 +174,6 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose, tri
   const [regPassword, setRegPassword] = useState("");
   const [agreedToTerms, setAgreedToTerms] = useState(false);
   const [agreedToNewsletter, setAgreedToNewsletter] = useState(false);
-  const [activeSocialModal, setActiveSocialModal] = useState<"google" | "apple" | null>(null);
-  const [socialLoading, setSocialLoading] = useState<boolean>(false);
 
   // Sign-in mode variables
   const [loginEmail, setLoginEmail] = useState("");
@@ -179,6 +188,14 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose, tri
   const [payCvv, setPayCvv] = useState("");
   const [isPaying, setIsPaying] = useState<boolean>(false);
   const [saveCardForFuture, setSaveCardForFuture] = useState<boolean>(true);
+  const [authDomainError, setAuthDomainError] = useState<string | null>(null);
+  const [copiedDomain, setCopiedDomain] = useState<boolean>(false);
+
+  const handleCopyDomain = () => {
+    navigator.clipboard.writeText(window.location.hostname);
+    setCopiedDomain(true);
+    setTimeout(() => setCopiedDomain(false), 2000);
+  };
 
   // Sync edits when state loads or changes
   useEffect(() => {
@@ -199,86 +216,104 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose, tri
     }
   }, [editName]);
 
-  // Save member profile state
-  useEffect(() => {
-    try {
-      localStorage.setItem("myra_member_info", JSON.stringify(member));
-      localStorage.setItem("myra_member_logged_in", isLoggedIn ? "true" : "false");
-    } catch (err) {
-      console.warn("[Profile Storage Catch] Unable to save member info in localStorage:", err);
+
+  // Friendly error helper for Firebase Auth issues
+  const getFriendlyAuthError = (err: any): string => {
+    const code = err?.code || "";
+    const msg = err?.message || "";
+    
+    if (code === "auth/operation-not-allowed" || msg.includes("operation-not-allowed")) {
+      return "Email/Password sign-in is currently disabled in your Firebase console. Please navigate to the Firebase Console -> Authentication -> Sign-in method, click 'Add provider', and enable 'Email/Password' to register or log in.";
     }
-  }, [member, isLoggedIn]);
+    if (code === "auth/email-already-in-use" || msg.includes("email-already-in-use")) {
+      return "An account with this email already exists. Please switch to the 'Log In' tab below to sign in.";
+    }
+    if (code === "auth/weak-password" || msg.includes("weak-password")) {
+      return "Your password is too weak. Firebase requires a secure password with at least 6 characters.";
+    }
+    if (code === "auth/invalid-email" || msg.includes("invalid-email")) {
+      return "The email address is invalid. Please double-check the spelling and format.";
+    }
+    if (code === "auth/user-not-found" || msg.includes("user-not-found")) {
+      return "No registered account found with this email. Please check the spelling or click 'Create Your Account' to sign up.";
+    }
+    if (code === "auth/wrong-password" || msg.includes("wrong-password")) {
+      return "The password you entered is incorrect. Please verify and try again, or click 'Forgot Password' to reset it.";
+    }
+    if (code === "auth/invalid-credential" || msg.includes("invalid-credential")) {
+      return "Invalid email or password. Please verify your credentials and try again.";
+    }
+    if (code === "auth/network-request-failed" || msg.includes("network-request-failed")) {
+      return "A network error occurred. Please verify your internet connection and try again.";
+    }
+    return msg || "An error occurred during authentication. Please try again.";
+  };
 
   if (!isOpen) return null;
 
   // Handles immediate Standard registration or login
-  const handleLoginSubmit = (e: React.FormEvent) => {
+  const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
     if (authMode === "register") {
-      if (!regFirstName.trim() || !regLastName.trim() || !regEmail.trim()) {
-        triggerToast("Please provide your first name, last name, and email address to proceed.");
+      if (!regFirstName.trim() || !regLastName.trim() || !regEmail.trim() || !regPassword.trim()) {
+        triggerToast("Please provide your first name, last name, email address, and a secure password to proceed.");
         return;
       }
       if (!agreedToTerms) {
         triggerToast("You must agree to the Terms & Conditions to activate your digital card.");
         return;
       }
-      if (!agreedToNewsletter) {
-        triggerToast("Please check 'Send me exclusive fragrance launches and offers' to activate your digital card.");
-        return;
+
+      setIsPaying(true);
+      try {
+        const compositeFullName = `${regFirstName.trim()} ${regLastName.trim()}`;
+        await signUpWithEmail(regEmail.trim(), regPassword.trim(), compositeFullName, regPhone.trim(), "standard");
+        
+        try {
+          await sendVerificationEmail();
+          triggerToast("Registration successful! A verification email has been sent. Please check your inbox.");
+        } catch (verifErr) {
+          console.warn("Could not auto-trigger verification email:", verifErr);
+          triggerToast("Welcome! Your Standard boutique account is active.");
+        }
+
+        setActiveTab("card");
+      } catch (err: any) {
+        console.error("Firebase Sign Up Error:", err);
+        const errorMsg = getFriendlyAuthError(err);
+        const isEmailAlreadyInUse = 
+          err.code === "auth/email-already-in-use" || 
+          (err.message && String(err.message).includes("email-already-in-use")) ||
+          (err.code && String(err.code).includes("email-already-in-use")) ||
+          String(err).includes("email-already-in-use");
+
+        if (isEmailAlreadyInUse) {
+          setAuthMode("login");
+          setLoginEmail(regEmail.trim());
+        }
+        triggerToast(errorMsg);
+      } finally {
+        setIsPaying(false);
       }
-
-      const compositeFullName = `${regFirstName.trim()} ${regLastName.trim()}`;
-      const randId = Math.floor(1000 + Math.random() * 9000);
-      const newMember: MemberInfo = {
-        name: compositeFullName,
-        email: regEmail,
-        phone: regPhone || "+39 333 4839 902",
-        address: editAddress || "Residential Curation, NY, USA",
-        preferredCategory: editCategory || "Perfumes",
-        scentNotes: editScent || "Damask Rose & Warm Amberwood",
-        tier: "Valued Standard Client",
-        loyaltyPoints: 25, // Standard welcome score
-        memberId: `MYRA-${randId}-STD`,
-        memberSince: "May 2026",
-        accountType: "standard"
-      };
-
-      setMember(newMember);
-      setIsLoggedIn(true);
-      setActiveTab("card");
-      triggerToast(`Welcome back, ${newMember.name}! Your Standard boutique account is active.`);
     } else {
       // Login mode processing
-      if (!loginEmail.trim()) {
-        triggerToast("Please enter your registered email address.");
+      if (!loginEmail.trim() || !loginPassword.trim()) {
+        triggerToast("Please enter your registered email address and password.");
         return;
       }
-      
-      const compositeFullName = loginEmail.toLowerCase().includes("elena") 
-        ? "Lady Elena Rostova" 
-        : "Elena Rostova";
 
-      const randId = Math.floor(1000 + Math.random() * 9000);
-      const newMember: MemberInfo = {
-        name: compositeFullName,
-        email: loginEmail,
-        phone: "+39 333 4839 902",
-        address: "Piazza di Spagna, 14, Rome, Italy 00187",
-        preferredCategory: "Perfumes",
-        scentNotes: "Rose, Warm Amberwood & White Musk",
-        tier: "Maison Elite Client",
-        loyaltyPoints: 1250,
-        memberId: `MYRA-${randId}-STD`,
-        memberSince: "May 2024",
-        accountType: "standard"
-      };
-
-      setMember(newMember);
-      setIsLoggedIn(true);
-      setActiveTab("card");
-      triggerToast(`Welcome back, ${newMember.name}! Authorized successfully.`);
+      setIsPaying(true);
+      try {
+        await loginWithEmail(loginEmail.trim(), loginPassword.trim());
+        setActiveTab("card");
+        triggerToast("Authorized successfully. Welcome back to MYRA!");
+      } catch (err: any) {
+        console.error("Firebase Login Error:", err);
+        triggerToast(getFriendlyAuthError(err));
+      } finally {
+        setIsPaying(false);
+      }
     }
   };
 
@@ -339,35 +374,41 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose, tri
       setShowCheckout(false);
 
       if (checkoutType === "register") {
-        const randId = Math.floor(1000 + Math.random() * 9000);
-        const newMember: MemberInfo = {
-          name: editName,
-          email: editEmail,
-          phone: editPhone || "+1 (555) 304-4090",
-          address: editAddress || "Residential Curation, NY, USA",
-          preferredCategory: editCategory,
-          scentNotes: editScent || "Citrus, Leather Aura & Sandalwood",
-          tier: "Maison Platinum Elite",
-          loyaltyPoints: 250, // Premium welcome points bonus
-          memberId: `MYRA-${randId}-STD`,
-          memberSince: "May 2026",
-          accountType: "standard"
-        };
-        setMember(newMember);
-        setIsLoggedIn(true);
-        setActiveTab("card");
-        triggerToast(`Payment Received! Welcome to MYRA Privé, ${editName}. 250 Gilded points verified.`);
+        const compositeFullName = `${regFirstName.trim()} ${regLastName.trim()}`;
+        signUpWithEmail(regEmail.trim(), regPassword.trim(), compositeFullName, regPhone.trim(), "vip")
+          .then(() => {
+            setActiveTab("card");
+            triggerToast(`Payment Received! Welcome to MYRA Privé, ${compositeFullName}. 250 Gilded points verified.`);
+          })
+          .catch((err: any) => {
+            console.error("Payment registration failed:", err);
+            const errorMsg = getFriendlyAuthError(err);
+            const isEmailAlreadyInUse = 
+              err.code === "auth/email-already-in-use" || 
+              (err.message && String(err.message).includes("email-already-in-use")) ||
+              (err.code && String(err.code).includes("email-already-in-use")) ||
+              String(err).includes("email-already-in-use");
+
+            if (isEmailAlreadyInUse) {
+              setAuthMode("login");
+              setLoginEmail(regEmail.trim());
+            }
+            triggerToast(errorMsg);
+          });
       } else {
-        // Upgrade existing standard account
-        setMember(prev => ({
-          ...prev,
-          tier: "Maison Platinum Elite",
-          loyaltyPoints: prev.loyaltyPoints + 250,
-          memberId: prev.memberId,
-          accountType: "standard"
-        }));
-        setActiveTab("card");
-        triggerToast("Congratulations! Upgrade Payment Received. Premium Elite status fully unlocked.");
+        // Upgrade existing standard account in Firestore!
+        updateProfileInFirestore({
+          membershipTier: "vip",
+          loyaltyPoints: (member.loyaltyPoints || 0) + 250
+        })
+          .then(() => {
+            setActiveTab("card");
+            triggerToast("Congratulations! Upgrade Payment Received. Premium Elite status fully unlocked.");
+          })
+          .catch((err: any) => {
+            console.error("Payment upgrade failed:", err);
+            triggerToast(err.message || "Failed to register upgrade in the cloud.");
+          });
       }
 
       // Clear standard test card input values
@@ -377,19 +418,30 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose, tri
     }, 2800);
   };
 
-  const handleSaveProfile = (e: React.FormEvent) => {
+  const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
-    setMember(prev => ({
-      ...prev,
-      name: editName,
-      email: editEmail,
-      phone: editPhone,
-      address: editAddress,
-      preferredCategory: editCategory,
-      scentNotes: editScent
-    }));
-    triggerToast("Your boutique client file has been securely updated.");
-    setActiveTab("card");
+    if (isLoggedIn) {
+      setIsPaying(true);
+      try {
+        await updateProfileInFirestore({
+          displayName: editName,
+          email: editEmail,
+          phoneNumber: editPhone,
+          savedAddresses: [editAddress],
+          preferredCategory: editCategory,
+          scentNotes: editScent
+        });
+        triggerToast("Your boutique client file has been securely updated in the cloud.");
+        setActiveTab("card");
+      } catch (err: any) {
+        console.error("Error updating profile in Firestore:", err);
+        triggerToast(err.message || "Failed to save profile updates.");
+      } finally {
+        setIsPaying(false);
+      }
+    } else {
+      triggerToast("Please sign in to update your profile.");
+    }
   };
 
   // Standard account clicks "Instant Elite Upgrade" inside card workspace
@@ -456,17 +508,22 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose, tri
     triggerToast(`Pipeline update: Simulated stage to [${newStatus.toUpperCase()}]`);
   };
 
-  const handleLogout = () => {
-    setIsLoggedIn(false);
-    setShowCheckout(false);
-    // Overwrite with empty inputs
-    setEditName("");
-    setEditEmail("");
-    setEditPhone("");
-    setEditAddress("");
-    setEditCategory("Perfumes");
-    setEditScent("");
-    triggerToast("Successfully signed out from your profile.");
+  const handleLogout = async () => {
+    try {
+      await logout();
+      setShowCheckout(false);
+      // Overwrite with empty inputs
+      setEditName("");
+      setEditEmail("");
+      setEditPhone("");
+      setEditAddress("");
+      setEditCategory("Perfumes");
+      setEditScent("");
+      triggerToast("Successfully signed out from your profile securely.");
+    } catch (err) {
+      console.error("Logout error:", err);
+      triggerToast("Error signing out securely.");
+    }
   };
 
   const copyToClipboard = (text: string, label: string) => {
@@ -873,9 +930,29 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose, tri
                     </div>
 
                     <div>
-                      <label className="block text-[11px] uppercase tracking-wide text-stone-755 font-semibold mb-1">
-                        Password <span className="text-leather-tan">*</span>
-                      </label>
+                      <div className="flex justify-between items-center mb-1">
+                        <label className="block text-[11px] uppercase tracking-wide text-stone-755 font-semibold">
+                          Password <span className="text-leather-tan">*</span>
+                        </label>
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            if (!loginEmail.trim()) {
+                              triggerToast("Please enter your registered email address first to reset password.");
+                              return;
+                            }
+                            try {
+                              await resetPasswordEmail(loginEmail.trim());
+                              triggerToast("A secure password reset email has been dispatched. Please check your inbox.");
+                            } catch (err: any) {
+                              triggerToast(err.message || "Failed to trigger password reset. Please try again.");
+                            }
+                          }}
+                          className="text-[10px] uppercase tracking-wider text-leather-tan hover:text-stone-900 font-semibold cursor-pointer transition-colors"
+                        >
+                          Forgot Password?
+                        </button>
+                      </div>
                       <input 
                         type="password" 
                         required
@@ -913,31 +990,113 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose, tri
             </div>
 
             {/* Social logins */}
-            <div id="social-sign-in-pills" className="grid grid-cols-2 gap-3">
+            <div id="social-sign-in-pills" className="w-full">
               <button
                 type="button"
-                onClick={() => {
-                  setActiveSocialModal("google");
-                  setSocialLoading(false);
+                onClick={async () => {
+                  try {
+                    setIsPaying(true);
+                    setAuthDomainError(null);
+                    await loginWithGoogle();
+                    setActiveTab("card");
+                    triggerToast("Google Authorization Successful!");
+                  } catch (err: any) {
+                    console.error("Google login error:", err);
+                    if (err.message?.includes("unauthorized-domain") || err.code === "auth/unauthorized-domain") {
+                      setAuthDomainError("auth/unauthorized-domain");
+                      triggerToast("Google Auth requires domain authorization. Please see instructions below.");
+                    } else {
+                      triggerToast(err.message || "Failed Google Auth. Please try again.");
+                    }
+                  } finally {
+                    setIsPaying(false);
+                  }
                 }}
-                className="flex items-center justify-center gap-2 border border-stone-200 bg-white hover:bg-stone-50 text-[11px] sm:text-xs font-semibold text-stone-750 py-2.5 px-3 rounded-full shadow-sm transition-all active:scale-98 cursor-pointer"
+                className="w-full flex items-center justify-center gap-2.5 border border-stone-200/80 bg-white hover:bg-stone-50 text-xs font-semibold text-stone-750 py-3 px-4 rounded-full shadow-sm transition-all active:scale-[0.99] cursor-pointer"
               >
                 <Chrome className="w-4 h-4 text-red-500 shrink-0" />
-                <span className="truncate">Continue with Google</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  setActiveSocialModal("apple");
-                  setSocialLoading(false);
-                }}
-                className="flex items-center justify-center gap-2 border border-stone-200 bg-white hover:bg-stone-50 text-[11px] sm:text-xs font-semibold text-stone-750 py-2.5 px-3 rounded-full shadow-sm transition-all active:scale-98 cursor-pointer"
-              >
-                <Apple className="w-4 h-4 text-stone-900 shrink-0" />
-                <span className="truncate">Continue with Apple</span>
+                <span>Continue with Google</span>
               </button>
             </div>
+
+            {/* Google Unauthorized Domain Troubleshooting Card */}
+            {authDomainError && (
+              <div id="firebase-unauthorized-domain-alert" className="mt-4 p-4 rounded-xl bg-amber-50/90 border border-amber-200/80 text-amber-950 text-xs leading-relaxed space-y-2.5">
+                <div className="flex items-start gap-2">
+                  <AlertTriangle className="w-4 h-4 text-amber-700 mt-0.5 shrink-0 animate-pulse" />
+                  <div>
+                    <h4 className="font-bold text-amber-900 uppercase tracking-wider text-[10px] font-sans">Firebase Domain Authorization Required</h4>
+                    <p className="mt-1 text-[11px] text-amber-800">
+                      Your Firebase project doesn't authorize this application's hosting domain for Google OAuth yet.
+                    </p>
+                  </div>
+                </div>
+                
+                <div className="bg-white/95 p-2.5 rounded border border-amber-200/50 flex items-center justify-between gap-2">
+                  <div className="flex flex-col gap-0.5 min-w-0">
+                    <span className="text-[9px] font-bold text-stone-400 uppercase font-mono tracking-wider">Current Authorized Host</span>
+                    <div className="font-mono text-[10.5px] text-stone-800 break-all select-all font-semibold">
+                      {window.location.hostname}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleCopyDomain}
+                    className="flex items-center gap-1.5 px-2.5 py-1.5 text-[10px] font-bold uppercase tracking-wider bg-stone-900 hover:bg-stone-950 text-white rounded-lg transition-all active:scale-95 shrink-0 cursor-pointer"
+                  >
+                    {copiedDomain ? (
+                      <>
+                        <Check className="w-3 h-3 text-emerald-400" />
+                        <span>Copied</span>
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="w-3 h-3" />
+                        <span>Copy</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+
+                <div className="space-y-1.5 text-[11px] text-amber-900 bg-amber-100/50 p-2.5 rounded border border-amber-200/30">
+                  <p className="font-bold">Simple Step-by-Step Resolution:</p>
+                  <ol className="list-decimal pl-4 space-y-1.5">
+                    <li>Open the <a href="https://console.firebase.google.com/project/myra-luxury-9c49c/authentication/settings" target="_blank" rel="noopener noreferrer" className="underline hover:text-stone-900 font-bold inline-flex items-center gap-0.5">Firebase Console Setting Link</a></li>
+                    <li>Ensure you are in project <strong>myra-luxury-9c49c</strong></li>
+                    <li>Scroll or navigate to the <strong>Authorized domains</strong> list</li>
+                    <li>Click <strong>Add domain</strong> and paste/type:
+                      <div className="flex items-center justify-between gap-1 mt-1 p-1 px-2 bg-white rounded border border-amber-200/30 font-mono text-[10px] text-stone-750 font-bold">
+                        <span className="break-all select-all">{window.location.hostname}</span>
+                        <button
+                          type="button"
+                          onClick={handleCopyDomain}
+                          className="p-1 text-stone-500 hover:text-stone-900 rounded transition-colors"
+                          title="Copy hostname"
+                        >
+                          {copiedDomain ? (
+                            <Check className="w-3 h-3 text-emerald-600" />
+                          ) : (
+                            <Copy className="w-3 h-3" />
+                          )}
+                        </button>
+                      </div>
+                    </li>
+                    <li>Click <strong>Add</strong> to save.</li>
+                  </ol>
+                </div>
+
+                <div className="flex justify-between items-center pt-2 border-t border-amber-200/50">
+                  <span className="text-[10px] text-amber-700 italic">Alternative: Use Email & Password login</span>
+                  <button
+                    type="button"
+                    onClick={() => setAuthDomainError(null)}
+                    className="px-2.5 py-1 text-[9px] uppercase tracking-wider bg-amber-900 hover:bg-amber-950 text-white font-bold rounded-full transition-all active:scale-95 cursor-pointer shadow-sm"
+                  >
+                    Dismiss Instructions
+                  </button>
+                </div>
+              </div>
+            )}
 
             {/* Footer auth switch toggle link */}
             <div className="pt-1 text-center text-xs text-stone-600">
@@ -1544,343 +1703,9 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose, tri
         </>
       )}
 
-      {/* Google-Style Secure Accounts Chooser Overlay Sim */}
-      {activeSocialModal === "google" && (
-        <div id="google-oauth-sim" className="absolute inset-0 bg-stone-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fade-in/10">
-          <div className="bg-white w-full max-w-sm rounded-2xl shadow-2xl border border-stone-100 overflow-hidden text-stone-800 flex flex-col font-sans transition-all transform scale-100 duration-300">
-            {/* Google secure header indicator */}
-            <div className="bg-stone-50 border-b border-stone-200/80 px-4 py-3 flex items-center justify-between text-xs text-stone-500 font-medium">
-              <div className="flex items-center gap-1.5">
-                <Lock className="w-3 h-3 text-emerald-600" />
-                <span className="font-mono tracking-tight text-[10px]">accounts.google.com/oauth2</span>
-              </div>
-              <button 
-                type="button"
-                onClick={() => setActiveSocialModal(null)}
-                className="text-stone-400 hover:text-stone-600 transition-colors cursor-pointer"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
 
-            {socialLoading ? (
-              /* Simulated authentic Google exchange keys keyway loader */
-              <div className="p-10 flex flex-col items-center justify-center space-y-4 text-center">
-                <div className="relative w-12 h-12 flex items-center justify-center">
-                  <div className="w-12 h-12 rounded-full border-4 border-stone-100 animate-pulse absolute"></div>
-                  <div className="w-12 h-12 rounded-full border-4 border-t-cyan-500 border-r-amber-500 border-b-rose-500 border-l-emerald-500 animate-spin absolute"></div>
-                </div>
-                <div className="space-y-1">
-                  <h4 className="text-sm font-semibold text-stone-900">Connecting Secure ID...</h4>
-                  <p className="text-[11px] text-stone-400 font-light">Exchanging credential keys with MYRA LUXURY</p>
-                </div>
-              </div>
-            ) : (
-              <div className="p-6 flex flex-col space-y-5">
-                {/* Brand Identity / Title header */}
-                <div className="flex flex-col items-center space-y-2.5 text-center">
-                  {/* Custom colored icon */}
-                  <div className="w-10 h-10 rounded-full bg-stone-50 flex items-center justify-center shadow-sm border border-stone-100 shrink-0">
-                    <svg className="w-5 h-5 shrink-0" viewBox="0 0 24 24">
-                      <path fill="#EA4335" d="M12 5.04c1.7 0 3.23.59 4.44 1.74l3.3-3.3C17.75 1.58 15.02 1 12 1 7.35 1 3.4 3.65 1.56 7.56l3.82 2.96C6.27 7.56 8.92 5.04 12 5.04z" />
-                      <path fill="#4285F4" d="M23.49 12.27c0-.81-.07-1.59-.2-2.35H12v4.45h6.44c-.28 1.48-1.12 2.73-2.38 3.58l3.7 2.87c2.16-2 3.43-4.94 3.43-8.55z" />
-                      <path fill="#FBBC05" d="M5.38 10.52a6.99 6.99 0 0 1 0-4.04L1.56 3.52a11.96 11.96 0 0 0 0 10.04l3.82-3.04z" />
-                      <path fill="#34A853" d="M12 23c3.24 0 5.97-1.07 7.96-2.91l-3.7-2.87c-1.03.69-2.35 1.1-4.26 1.1-3.08 0-5.73-2.52-6.62-5.48l-3.82 2.96C3.4 20.35 7.35 23 12 23z" />
-                    </svg>
-                  </div>
-                  <div className="space-y-1">
-                    <h3 className="text-base font-semibold text-stone-900 font-sans tracking-tight">Sign in with Google</h3>
-                    <p className="text-[11px] text-stone-500">to continue to <strong className="text-stone-850 font-semibold font-serif">MYRA LUXURY</strong></p>
-                  </div>
-                </div>
 
-                {/* Account list options */}
-                <div className="space-y-2">
-                  <p className="text-[10px] text-stone-400 font-bold tracking-wider uppercase">Select accounts</p>
-                  
-                  {/* Lady Elena Option */}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSocialLoading(true);
-                      setTimeout(() => {
-                        const randId = Math.floor(1000 + Math.random() * 9000);
-                        const newMember: MemberInfo = {
-                          name: "Lady Elena Rostova",
-                          email: "elena.rostova@luxury.com",
-                          phone: "+39 333 4839 902",
-                          address: "Piazza di Spagna, 14, Rome, Italy 00187",
-                          preferredCategory: "Perfumes",
-                          scentNotes: "Rose, Warm Amberwood & White Musk",
-                          tier: "Maison Elite Client",
-                          loyaltyPoints: 1250,
-                          memberId: `MYRA-${randId}-STD`,
-                          memberSince: "May 2024",
-                          accountType: "standard"
-                        };
-                        setRegFirstName("Elena");
-                        setRegLastName("Rostova");
-                        setRegEmail("elena.rostova@luxury.com");
-                        setLoginEmail("elena.rostova@luxury.com");
-                        setAgreedToTerms(true);
-                        setAgreedToNewsletter(true);
-                        setMember(newMember);
-                        setIsLoggedIn(true);
-                        setActiveTab("card");
-                        setActiveSocialModal(null);
-                        setSocialLoading(false);
-                        triggerToast("Google Sign-In completed securely. Welcome Lady Elena Rostova!");
-                      }, 1200);
-                    }}
-                    className="w-full flex items-center justify-between p-3 border border-stone-200 hover:border-stone-950 rounded-xl hover:bg-stone-50/50 text-left transition-all duration-200 group cursor-pointer"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-full bg-[#E5D5C5] text-stone-800 font-bold font-serif flex items-center justify-center text-xs shadow-sm">
-                        ER
-                      </div>
-                      <div className="flex flex-col">
-                        <span className="text-xs font-semibold text-stone-900 leading-tight">Elena Rostova</span>
-                        <span className="text-[10px] text-stone-500">elena.rostova@luxury.com</span>
-                      </div>
-                    </div>
-                    <span className="text-[9px] text-[#D4AF37] font-semibold uppercase tracking-wider bg-amber-50 px-1.5 py-0.5 rounded">
-                      Elite Client
-                    </span>
-                  </button>
 
-                  {/* Alexandra Option */}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSocialLoading(true);
-                      setTimeout(() => {
-                        const randId = Math.floor(1000 + Math.random() * 9000);
-                        const newMember: MemberInfo = {
-                          name: "Alexandra Dubois",
-                          email: "alexandra.dubois@chic.fr",
-                          phone: "+33 6 5293 8401",
-                          address: "Avenue Montaigne, 42, Paris, France 75008",
-                          preferredCategory: "Perfumes",
-                          scentNotes: "Vanilla Suede, Jasmine & Cashmere",
-                          tier: "Bespoke Connoisseur",
-                          loyaltyPoints: 1500,
-                          memberId: `MYRA-${randId}-STD`,
-                          memberSince: "June 2024",
-                          accountType: "standard"
-                        };
-                        setRegFirstName("Alexandra");
-                        setRegLastName("Dubois");
-                        setRegEmail("alexandra.dubois@chic.fr");
-                        setLoginEmail("alexandra.dubois@chic.fr");
-                        setAgreedToTerms(true);
-                        setAgreedToNewsletter(true);
-                        setMember(newMember);
-                        setIsLoggedIn(true);
-                        setActiveTab("card");
-                        setActiveSocialModal(null);
-                        setSocialLoading(false);
-                        triggerToast("Google Sign-In completed securely. Welcome Alexandra Dubois!");
-                      }, 1200);
-                    }}
-                    className="w-full flex items-center justify-between p-3 border border-stone-200 hover:border-stone-950 rounded-xl hover:bg-stone-50/50 text-left transition-all duration-200 group cursor-pointer"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-full bg-[#8A7968]/20 text-[#8A7968] font-bold font-serif flex items-center justify-center text-xs shadow-sm">
-                        AD
-                      </div>
-                      <div className="flex flex-col">
-                        <span className="text-xs font-semibold text-stone-900 leading-tight">Alexandra Dubois</span>
-                        <span className="text-[10px] text-stone-500">alexandra.dubois@chic.fr</span>
-                      </div>
-                    </div>
-                    <span className="text-[9px] text-stone-400 font-semibold uppercase tracking-wider group-hover:text-stone-950 transition-colors">
-                      Select
-                    </span>
-                  </button>
-                </div>
-
-                <p className="text-[10.5px] text-stone-400 leading-relaxed font-light font-sans">
-                  The Google identity network transmits authenticated email claims only. View MYRA LUXURY's <span className="underline hover:text-stone-700 cursor-pointer">Privacy Policy</span> and secure certification protocols.
-                </p>
-
-                {/* Footer buttons */}
-                <div className="flex justify-end pt-1">
-                  <button 
-                    type="button" 
-                    onClick={() => setActiveSocialModal(null)}
-                    className="text-[11px] font-semibold uppercase tracking-wider text-stone-500 hover:text-stone-800 transition-colors cursor-pointer"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* Apple-Style Secure iOS Authenticator Overlay Sim */}
-      {activeSocialModal === "apple" && (
-        <div id="apple-oauth-sim" className="absolute inset-0 bg-stone-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fade-in/10">
-          <div className="bg-stone-950 w-full max-w-sm rounded-[24px] shadow-2xl border border-stone-850 overflow-hidden text-neutral-200 flex flex-col font-sans transition-all transform scale-100 duration-300">
-            {/* Apple custom title header bar */}
-            <div className="bg-stone-900 border-b border-stone-850 px-4 py-3 flex items-center justify-between text-xs text-stone-400 font-medium font-sans">
-              <div className="flex items-center gap-1.5">
-                <Apple className="w-3.5 h-3.5 text-white" />
-                <span className="font-semibold text-white">Apple ID Authentication</span>
-              </div>
-              <button 
-                type="button"
-                onClick={() => setActiveSocialModal(null)}
-                className="text-stone-400 hover:text-white transition-colors cursor-pointer"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            {socialLoading ? (
-              /* Simulated Apple Private Relay FaceID scanner pulse loop */
-              <div className="p-10 flex flex-col items-center justify-center space-y-6 text-center">
-                <div className="relative flex items-center justify-center w-16 h-16">
-                  <div className="w-16 h-16 rounded-full border-2 border-stone-800 absolute"></div>
-                  <div className="w-16 h-16 rounded-full border-2 border-t-white border-r-stone-700 animate-spin absolute"></div>
-                  <Apple className="w-6 h-6 text-white absolute shrink-0" />
-                </div>
-                <div className="space-y-1">
-                  <h4 className="text-xs uppercase tracking-widest font-bold text-white">Verifying Touch ID...</h4>
-                  <p className="text-[10px] text-stone-500 font-light font-mono">ENCRYPTING RELAY CLAIMS</p>
-                </div>
-              </div>
-            ) : (
-              <div className="p-6 flex flex-col space-y-5">
-                <div className="flex flex-col items-center space-y-2 text-center">
-                  <Apple className="w-10 h-10 text-white" />
-                  <div className="space-y-1">
-                    <h3 className="text-base font-semibold tracking-tight text-white font-sans">Sign in with Apple ID</h3>
-                    <p className="text-[11px] text-stone-400 leading-normal">Authorize secure connection with password or Face ID</p>
-                  </div>
-                </div>
-
-                {/* Profile choice lists */}
-                <div className="space-y-2">
-                  <span className="text-[9px] text-stone-500 font-bold uppercase tracking-wider">Apple ID accounts found</span>
-                  
-                  {/* Preloaded Choice 1 */}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSocialLoading(true);
-                      setTimeout(() => {
-                        const randId = Math.floor(1000 + Math.random() * 9000);
-                        const newMember: MemberInfo = {
-                          name: "Lady Elena Rostova",
-                          email: "elena.rostova@luxury.com",
-                          phone: "+39 333 4839 902",
-                          address: "Piazza di Spagna, 14, Rome, Italy 00187",
-                          preferredCategory: "Perfumes",
-                          scentNotes: "Rose, Warm Amberwood & White Musk",
-                          tier: "Maison Elite Client",
-                          loyaltyPoints: 1250,
-                          memberId: `MYRA-${randId}-STD`,
-                          memberSince: "May 2024",
-                          accountType: "standard"
-                        };
-                        setRegFirstName("Elena");
-                        setRegLastName("Rostova");
-                        setRegEmail("elena.rostova@luxury.com");
-                        setLoginEmail("elena.rostova@luxury.com");
-                        setAgreedToTerms(true);
-                        setAgreedToNewsletter(true);
-                        setMember(newMember);
-                        setIsLoggedIn(true);
-                        setActiveTab("card");
-                        setActiveSocialModal(null);
-                        setSocialLoading(false);
-                        triggerToast("Apple ID authenticated successfully via Secure Touch ID!");
-                      }, 1200);
-                    }}
-                    className="w-full flex items-center justify-between p-3 bg-stone-900 border border-stone-800 hover:border-white text-white rounded-xl text-left transition-all cursor-pointer group"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-full bg-stone-800 flex items-center justify-center text-xs">
-                        🛡️
-                      </div>
-                      <div className="flex flex-col">
-                        <span className="text-xs font-semibold leading-tight text-white">Elena Rostova</span>
-                        <span className="text-[9px] text-stone-400">elena.rostova@luxury.com</span>
-                      </div>
-                    </div>
-                    <ChevronRight className="w-3.5 h-3.5 text-stone-400 group-hover:translate-x-0.5 transition-transform" />
-                  </button>
-
-                  {/* Preloaded Choice 2 */}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSocialLoading(true);
-                      setTimeout(() => {
-                        const randId = Math.floor(1000 + Math.random() * 9000);
-                        const newMember: MemberInfo = {
-                          name: "Arthur de Rohan",
-                          email: "arthur.rohan@chateau.fr",
-                          phone: "+33 7 9423 1032",
-                          address: "Rue du Faubourg Saint-Honoré, 73, Paris, France",
-                          preferredCategory: "Perfumes",
-                          scentNotes: "Sandalwood, Spiced Cedar & Vetiver Tincture",
-                          tier: "Maison Royal Elite",
-                          loyaltyPoints: 3100,
-                          memberId: `MYRA-${randId}-STD`,
-                          memberSince: "March 2024",
-                          accountType: "standard"
-                        };
-                        setRegFirstName("Arthur");
-                        setRegLastName("Rohan");
-                        setRegEmail("arthur.rohan@chateau.fr");
-                        setLoginEmail("arthur.rohan@chateau.fr");
-                        setAgreedToTerms(true);
-                        setAgreedToNewsletter(true);
-                        setMember(newMember);
-                        setIsLoggedIn(true);
-                        setActiveTab("card");
-                        setActiveSocialModal(null);
-                        setSocialLoading(false);
-                        triggerToast("Apple ID authenticated successfully via Private Relay!");
-                      }, 1200);
-                    }}
-                    className="w-full flex items-center justify-between p-3 bg-stone-900 border border-stone-800 hover:border-white text-white rounded-xl text-left transition-all cursor-pointer group"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-full bg-stone-800 flex items-center justify-center text-xs font-serif font-bold text-[#D4AF37]">
-                        AR
-                      </div>
-                      <div className="flex flex-col">
-                        <span className="text-xs font-semibold leading-tight text-white">Arthur de Rohan</span>
-                        <span className="text-[9px] text-stone-400 font-mono">arthur.rohan@chateau.fr</span>
-                      </div>
-                    </div>
-                    <ChevronRight className="w-3.5 h-3.5 text-stone-400 group-hover:translate-x-0.5 transition-transform" />
-                  </button>
-                </div>
-
-                <p className="text-[10px] text-stone-500 font-sans leading-relaxed text-center font-light pt-1">
-                  Apple Hide My Email options are supported. Access is mediated by Apple's secure hardware sandbox.
-                </p>
-
-                {/* Footer action link */}
-                <div className="flex justify-center">
-                  <button 
-                    type="button" 
-                    onClick={() => setActiveSocialModal(null)}
-                    className="text-[10px] font-bold uppercase tracking-widest text-[#D4AF37]/80 hover:text-white transition-colors cursor-pointer"
-                  >
-                    Cancel Secure Sign-In
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
     </div>
   </div>
   );

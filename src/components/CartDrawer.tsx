@@ -3,6 +3,7 @@ import { CartItem } from "../types";
 import { ProductVisual } from "./ProductVisual";
 import { X, ShoppingBag, Plus, Minus, Trash2, ArrowRight, ShieldCheck, Tag, Gift, ChevronLeft, MapPin, User, Mail, Phone, Home, Briefcase, Info, CreditCard, Check } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
+import { useAuth } from "../lib/authContext";
 
 interface CartDrawerProps {
   isOpen: boolean;
@@ -25,12 +26,12 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
   triggerToast,
   onOpenProfile
 }) => {
+  const { user, memberInfo, isLoggedIn } = useAuth();
   const [promoCode, setPromoCode] = useState("");
   const [appliedDiscount, setAppliedDiscount] = useState<{ code: string; type: "fixed" | "percentage" | "free_shipping"; value: number } | null>(null);
   const [discountError, setDiscountError] = useState("");
   const [dbPromoCodes, setDbPromoCodes] = useState<any[]>([]);
   const [checkoutStep, setCheckoutStep] = useState<"cart" | "shipping" | "payment" | "submitting" | "success">("cart");
-  const [isCustomerLoggedIn, setIsCustomerLoggedIn] = useState<boolean>(false);
 
   // Razorpay payment methods and simulation
   const [paymentMethodGroup, setPaymentMethodGroup] = useState<"upi" | "card" | "netbanking" | "wallet" | "cod">("upi");
@@ -47,12 +48,9 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
   const [razorpayPaymentState, setRazorpayPaymentState] = useState<"loading" | "method_selected" | "verifying" | "success" | "failed">("loading");
   const [razorpayError, setRazorpayError] = useState("");
 
-  // Sync login state and fetch dynamic promo codes when drawer visibility changes
+  // Sync and fetch dynamic promo codes when drawer visibility changes
   useEffect(() => {
     if (isOpen) {
-      const loggedIn = localStorage.getItem("myra_member_logged_in") === "true";
-      setIsCustomerLoggedIn(loggedIn);
-
       // Fetch dynamic promo codes
       fetch("/api/promo-codes")
         .then(res => res.json())
@@ -249,8 +247,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
   const handleProceedToShipping = () => {
     if (cartItems.length === 0) return;
 
-    const loggedIn = localStorage.getItem("myra_member_logged_in") === "true";
-    if (!loggedIn) {
+    if (!isLoggedIn) {
       triggerToast("An active Atelier membership sign-in is required to place an order.");
       if (onOpenProfile) {
         onOpenProfile();
@@ -259,34 +256,30 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
     }
     
     try {
-      const savedProfile = localStorage.getItem("myra_member_profile") || localStorage.getItem("myra_member_info");
-      if (savedProfile) {
-        const profile = JSON.parse(savedProfile);
-        if (profile) {
-          const names = (profile.name || "").trim().split(/\s+/);
-          setFirstName(names[0] || "");
-          if (names.length > 1) {
-            setLastName(names.slice(1).join(" ") || "");
-          }
-          setEmailAddress(profile.email || "");
-          setMobileNumber(profile.phone || "");
-          
-          if (profile.address) {
-            const parts = profile.address.split(",").map((p: string) => p.trim());
-            if (parts.length > 1) {
-              setStreetAddress(parts[0] || "");
-              setAreaLocality(parts[1] || "");
-              setShCity(parts[2] || "");
-              setShState(parts[3] || "");
-              setShCountry(parts[4] || "India");
-            } else {
-              setStreetAddress(profile.address);
-            }
+      if (memberInfo) {
+        const names = (memberInfo.name || "").trim().split(/\s+/);
+        setFirstName(names[0] || "");
+        if (names.length > 1) {
+          setLastName(names.slice(1).join(" ") || "");
+        }
+        setEmailAddress(memberInfo.email || "");
+        setMobileNumber(memberInfo.phone || "");
+        
+        if (memberInfo.address) {
+          const parts = memberInfo.address.split(",").map((p: string) => p.trim());
+          if (parts.length > 1) {
+            setStreetAddress(parts[0] || "");
+            setAreaLocality(parts[1] || "");
+            setShCity(parts[2] || "");
+            setShState(parts[3] || "");
+            setShCountry(parts[4] || "India");
+          } else {
+            setStreetAddress(memberInfo.address);
           }
         }
       }
     } catch (e) {
-      console.error("Could not parse profile storage values, fallback standard", e);
+      console.error("Could not parse profile values, fallback standard", e);
     }
 
     setCheckoutStep("shipping");
@@ -338,6 +331,8 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
 
     const newOrder: any = {
       id: orderId,
+      userId: user ? user.uid : null,
+      uid: user ? user.uid : null,
       razorpayPaymentId: explicitPaymentId,
       date: new Date().toISOString().split("T")[0],
       orderDate: new Date().toISOString().split("T")[0],
@@ -1632,7 +1627,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                     </div>
 
                     {/* Customer sign-in blockage card */}
-                    {!isCustomerLoggedIn && (
+                    {!isLoggedIn && (
                       <div className="bg-[#FAF6F0] border border-stone-200/50 rounded-xl p-3.5 space-y-2.5 animate-reveal text-left">
                         <div className="flex gap-2.5">
                           <User className="w-4 h-4 text-leather-tan shrink-0 mt-0.5" />
@@ -1660,7 +1655,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                       onClick={handleProceedToShipping}
                       className="w-full bg-stone-950 hover:bg-leather-tan text-white font-semibold py-4 px-6 rounded-xl flex items-center justify-center gap-2 shadow-xl hover:-translate-y-0.5 active:translate-y-0 transition-all duration-300 cursor-pointer text-sm"
                     >
-                      {isCustomerLoggedIn ? (
+                      {isLoggedIn ? (
                         <>
                           Secure Checkout
                           <ArrowRight className="w-4 h-4" />

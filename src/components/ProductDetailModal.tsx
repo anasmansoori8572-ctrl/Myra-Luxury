@@ -266,7 +266,7 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
   }, [productReviews]);
 
   // Handle new submitted review
-  const handleReviewSubmit = (newReview: Omit<Review, "id" | "date" | "verified"> & { image?: string }) => {
+  const handleReviewSubmit = (newReview: Omit<Review, "id" | "date" | "verified"> & { image?: string; userId?: string }) => {
     if (!product) return;
     const freshReview: Review = {
       id: `rev-${Date.now()}`,
@@ -275,7 +275,8 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
       comment: newReview.comment,
       verified: true,
       date: new Date().toLocaleDateString("en-US", { month: "2-digit", day: "2-digit", year: "numeric" }),
-      image: newReview.image
+      image: newReview.image,
+      userId: newReview.userId
     };
 
     const updatedReviewsList = [freshReview, ...productReviews];
