@@ -269,15 +269,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose, tri
       try {
         const compositeFullName = `${regFirstName.trim()} ${regLastName.trim()}`;
         await signUpWithEmail(regEmail.trim(), regPassword.trim(), compositeFullName, regPhone.trim(), "standard");
-        
-        try {
-          await sendVerificationEmail();
-          triggerToast("Registration successful! A verification email has been sent. Please check your inbox.");
-        } catch (verifErr) {
-          console.warn("Could not auto-trigger verification email:", verifErr);
-          triggerToast("Welcome! Your Standard boutique account is active.");
-        }
-
+        triggerToast("Registration successful! Welcome to MYRA.");
         setActiveTab("card");
       } catch (err: any) {
         console.error("Firebase Sign Up Error:", err);
