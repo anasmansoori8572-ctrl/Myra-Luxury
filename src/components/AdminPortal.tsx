@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
-import { Product, SizeVariant, FragranceNotes, CartItem, ContactMessage, StoreLocation, Review, PromoCode } from "../types";
+import { Product, SizeVariant, FragranceNotes, CartItem, ContactMessage, StoreLocation, Review, PromoCode, SEOMetadata } from "../types";
 import { getPreseededReviews } from "./ProductDetailModal";
 import { MediaSettingsTab } from "./MediaSettingsTab";
 import { uploadToCloudinary } from "../cloudinary";
@@ -41,7 +41,8 @@ import {
   Settings,
   ClipboardList,
   Building,
-  Calculator
+  Calculator,
+  Globe
 } from "lucide-react";
 
 interface AdminPortalProps {
@@ -68,6 +69,8 @@ interface AdminPortalProps {
   onCompanySubtitleChange?: (sub: string) => void;
   bannerUrl?: string;
   onBannerUrlChange?: (url: string) => void;
+  seoData?: Record<string, SEOMetadata>;
+  onSeoDataChange?: (newSeoData: Record<string, SEOMetadata>) => void;
 }
 
 // Initial default password
@@ -97,6 +100,8 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
   onCompanySubtitleChange,
   bannerUrl = "https://res.cloudinary.com/dy7avkqub/image/upload/q_auto/f_auto/v1780835693/samples/waves.png",
   onBannerUrlChange,
+  seoData = {},
+  onSeoDataChange,
 }) => {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
     return localStorage.getItem("myra_admin_auth") === "true";
@@ -119,7 +124,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
   const [resetNewPasscode, setResetNewPasscode] = useState<string>("");
   const [recoveryError, setRecoveryError] = useState<string | null>(null);
 
-  const [activeSubTab, setActiveSubTab] = useState<"products" | "orders" | "analytics" | "messages" | "locations" | "media" | "reviews" | "promocodes" | "shipping">("products");
+  const [activeSubTab, setActiveSubTab] = useState<"products" | "orders" | "analytics" | "messages" | "locations" | "media" | "reviews" | "promocodes" | "shipping" | "seo">("products");
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState<boolean>(false);
   const [orderStatusFilter, setOrderStatusFilter] = useState<string>("All");
   const [paymentStatusFilter, setPaymentStatusFilter] = useState<string>("All");
@@ -144,6 +149,29 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
   // Reviews management states
   const [selectedProductReviewId, setSelectedProductReviewId] = useState<string | null>(null);
   const [reviewSearchQuery, setReviewSearchQuery] = useState<string>( "");
+
+  // Dynamic SEO editing states
+  const [seoActivePage, setSeoActivePage] = useState<string>("home");
+  const [localTitle, setLocalTitle] = useState("");
+  const [localDescription, setLocalDescription] = useState("");
+  const [localKeywords, setLocalKeywords] = useState("");
+  const [localOgTitle, setLocalOgTitle] = useState("");
+  const [localOgDescription, setLocalOgDescription] = useState("");
+  const [localOgImage, setLocalOgImage] = useState("");
+
+  useEffect(() => {
+    if (seoData && seoData[seoActivePage]) {
+      const pageData = seoData[seoActivePage];
+      setLocalTitle(pageData.title || "");
+      setLocalDescription(pageData.description || "");
+      setLocalKeywords(pageData.keywords || "");
+      setLocalOgTitle(pageData.ogTitle || "");
+      setLocalOgDescription(pageData.ogDescription || "");
+      setLocalOgImage(pageData.ogImage || "");
+    }
+  }, [seoActivePage, seoData]);
+
+  const [uploadingOgImage, setUploadingOgImage] = useState<boolean>(false);
 
   // Delhivery Logistics Dashboard Admin states
   const [adminShipments, setAdminShipments] = useState<any[]>([]);
@@ -1488,6 +1516,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                       { id: "reviews", label: "Review Curation", icon: Star },
                       { id: "locations", label: "Boutique Showrooms", icon: MapPin, count: locations.length },
                       { id: "media", label: "Media & Presentation", icon: Video },
+                      { id: "seo", label: "SEO & Search Tags", icon: Globe },
                       { id: "analytics", label: "Atelier Metrics & Sandbox", icon: Activity },
                       { id: "messages", label: "Curator Mailbox", icon: MessageSquare, count: messages.filter(m => !m.isRead).length || undefined }
                     ];
@@ -1523,6 +1552,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                     { id: "reviews", label: "Review Curation", icon: Star },
                     { id: "locations", label: "Boutique Showrooms", icon: MapPin, count: locations.length },
                     { id: "media", label: "Media & Presentation", icon: Video },
+                    { id: "seo", label: "SEO & Search Tags", icon: Globe },
                     { id: "analytics", label: "Atelier Metrics & Sandbox", icon: Activity },
                     { id: "messages", label: "Curator Mailbox", icon: MessageSquare, count: messages.filter(m => !m.isRead).length || undefined }
                   ].map(tab => {
@@ -1574,6 +1604,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                 { id: "reviews", label: "Review Curation", icon: Star },
                 { id: "locations", label: "Boutique Showrooms", icon: MapPin, count: locations.length },
                 { id: "media", label: "Media & Presentation", icon: Video },
+                { id: "seo", label: "SEO & Search Tags", icon: Globe },
                 { id: "analytics", label: "Atelier Metrics & Sandbox", icon: Activity },
                 { id: "messages", label: "Curator Mailbox", icon: MessageSquare, count: messages.filter(m => !m.isRead).length || undefined }
               ].map(tab => {
@@ -3946,6 +3977,423 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                 }}
                 triggerToast={triggerToast}
               />
+            )}
+
+            {/* SEO & SEARCH VISIBILITY TAGS TAB */}
+            {activeSubTab === "seo" && (
+              <div className="space-y-6 animate-fade-in p-6 bg-white rounded-2xl border border-stone-200 shadow-sm text-left">
+                {/* Section Header */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-stone-200 pb-5 text-left">
+                  <div className="space-y-1">
+                    <h3 className="text-lg font-serif font-bold text-stone-900 flex items-center gap-2">
+                      <Globe className="w-5 h-5 text-leather-tan" />
+                      Atelier SEO & Search Engine Optimization
+                    </h3>
+                    <p className="text-xs text-stone-500 leading-relaxed font-light">
+                      Configure page-level titles, metadata descriptions, primary index keywords, and Open Graph tags. Live Google snippet simulators update immediately.
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] bg-emerald-50 text-emerald-700 font-bold px-2 py-0.5 rounded border border-emerald-100 flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                      Dynamic SEO Live Node
+                    </span>
+                  </div>
+                </div>
+
+                {/* Info Note */}
+                <div className="bg-[#FAF8F5] border border-stone-200 rounded-xl p-4 text-xs text-stone-700 leading-relaxed">
+                  <span className="font-serif font-bold text-stone-900 block mb-1">💡 Search Crawl and Indexing Blueprint</span>
+                  Page metadata is updated in real time as spiders crawl the site. Customize labels, social media summary descriptions, and primary cards for each legal or storefront page below.
+                </div>
+
+                {/* Page Navigation Grid */}
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-stone-700 mb-2 font-sans">
+                    Select Boutique Page to Customize
+                  </label>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                    {[
+                      { id: "home", label: "Boutique Home / Storefront" },
+                      { id: "about-us", label: "Heritage / About Atelier" },
+                      { id: "contact-us", label: "Contact Support & Gifting" },
+                      { id: "privacy-policy", label: "Privacy Policy" },
+                      { id: "terms-conditions", label: "Terms & Conditions" },
+                      { id: "shipping-policy", label: "Delhivery Shipping" },
+                      { id: "return-refund", label: "Refunds & Guarantees" }
+                    ].map((page) => {
+                      const isActive = seoActivePage === page.id;
+                      return (
+                        <button
+                          key={page.id}
+                          type="button"
+                          onClick={() => setSeoActivePage(page.id)}
+                          className={`px-3 py-2.5 rounded-lg text-[11px] font-bold text-left transition-all tracking-wide border cursor-pointer ${
+                            isActive
+                              ? "bg-stone-900 border-stone-900 text-white shadow-sm"
+                              : "bg-white border-stone-200 text-stone-700 hover:border-stone-400"
+                          }`}
+                        >
+                          <span className="block truncate font-serif">{page.label}</span>
+                          <span className="block text-[8.5px] font-mono text-stone-400 font-normal mt-0.5 truncate">/{page.id === "home" ? "" : page.id}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Primary SEO Workspace */}
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 pt-2">
+                  
+                  {/* Left Column: Editor Form */}
+                  <div className="space-y-5">
+                    <h4 className="text-xs font-serif font-extrabold uppercase tracking-widest text-[#8F633E] border-b border-stone-150 pb-1 flex items-center gap-1.5">
+                      Metadata Configuration
+                    </h4>
+
+                    {/* Meta Title */}
+                    <div className="space-y-1">
+                      <div className="flex justify-between items-center">
+                        <label className="block text-xs font-bold text-stone-800">
+                          HTML Page Title *
+                        </label>
+                        <span className={`text-[10px] font-mono ${localTitle.length > 60 ? "text-amber-600" : "text-stone-400"}`}>
+                          {localTitle.length} / 60 chars recommended
+                        </span>
+                      </div>
+                      <input
+                        type="text"
+                        value={localTitle}
+                        onChange={(e) => setLocalTitle(e.target.value)}
+                        className="w-full bg-stone-50 border border-stone-250 rounded-lg px-3 py-2.5 text-xs focus:ring-1 focus:ring-leather-tan focus:outline-none font-sans text-stone-900"
+                        placeholder="Page title used by Search Engines..."
+                      />
+                    </div>
+
+                    {/* Meta Description */}
+                    <div className="space-y-1">
+                      <div className="flex justify-between items-center">
+                        <label className="block text-xs font-bold text-stone-800">
+                          Meta Search Description *
+                        </label>
+                        <span className={`text-[10px] font-mono ${localDescription.length > 160 ? "text-amber-600" : "text-stone-400"}`}>
+                          {localDescription.length} / 160 chars recommended
+                        </span>
+                      </div>
+                      <textarea
+                        rows={3}
+                        value={localDescription}
+                        onChange={(e) => setLocalDescription(e.target.value)}
+                        className="w-full bg-stone-50 border border-stone-250 rounded-lg px-3 py-2 text-xs focus:ring-1 focus:ring-leather-tan focus:outline-none font-sans text-stone-900 leading-relaxed resize-none"
+                        placeholder="Describe the page's primary offerings and theme..."
+                      />
+                    </div>
+
+                    {/* Meta Keywords */}
+                    <div className="space-y-1">
+                      <label className="block text-xs font-bold text-stone-800">
+                        Index Keywords (Comma-Separated)
+                      </label>
+                      <input
+                        type="text"
+                        value={localKeywords}
+                        onChange={(e) => setLocalKeywords(e.target.value)}
+                        className="w-full bg-stone-50 border border-stone-250 rounded-lg px-3 py-2 text-xs focus:ring-1 focus:ring-leather-tan focus:outline-none font-sans text-stone-900 font-mono"
+                        placeholder="luxury, fragrances, organic soap, handcrafted..."
+                      />
+                    </div>
+
+                    <h4 className="text-xs font-serif font-extrabold uppercase tracking-widest text-[#8F633E] border-b border-stone-150 pt-2 pb-1">
+                      Social Sharing / Open Graph Tags
+                    </h4>
+
+                    {/* OG Title */}
+                    <div className="space-y-1">
+                      <label className="block text-xs font-bold text-stone-800">
+                        Open Graph Title (Facebook / WhatsApp)
+                      </label>
+                      <input
+                        type="text"
+                        value={localOgTitle}
+                        onChange={(e) => setLocalOgTitle(e.target.value)}
+                        className="w-full bg-stone-50 border border-stone-250 rounded-lg px-3 py-2 text-xs focus:ring-1 focus:ring-leather-tan focus:outline-none font-sans text-stone-900"
+                        placeholder="Custom title used during social shares..."
+                      />
+                    </div>
+
+                    {/* OG Description */}
+                    <div className="space-y-1">
+                      <label className="block text-xs font-bold text-stone-800">
+                        Open Graph Description
+                      </label>
+                      <textarea
+                        rows={2}
+                        value={localOgDescription}
+                        onChange={(e) => setLocalOgDescription(e.target.value)}
+                        className="w-full bg-stone-50 border border-stone-250 rounded-lg px-3 py-2 text-xs focus:ring-1 focus:ring-leather-tan focus:outline-none font-sans text-stone-900 leading-relaxed resize-none"
+                        placeholder="Custom description used during social shares..."
+                      />
+                    </div>
+
+                    {/* OG Image */}
+                    <div className="space-y-1">
+                      <label className="block text-xs font-bold text-stone-800">
+                        Open Graph Banner Image URL
+                      </label>
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          value={localOgImage}
+                          onChange={(e) => setLocalOgImage(e.target.value)}
+                          className="flex-1 bg-stone-50 border border-stone-250 rounded-lg px-3 py-2 text-xs focus:ring-1 focus:ring-leather-tan focus:outline-none font-sans text-stone-900"
+                          placeholder="Image URL shown in link previews..."
+                        />
+                        <div className="relative">
+                          <input
+                            type="file"
+                            id="seo-og-upload"
+                            className="hidden"
+                            accept="image/*"
+                            onChange={(e) => {
+                              const file = e.target.files?.[0];
+                              if (file) {
+                                setUploadingOgImage(true);
+                                uploadToCloudinary(file, "image")
+                                  .then((uploadedUrl) => {
+                                    setLocalOgImage(uploadedUrl);
+                                    triggerToast("✨ Custom Open Graph Image uploaded and loaded!");
+                                  })
+                                  .catch((err) => {
+                                    console.error("SEO OG Upload error:", err);
+                                    triggerToast(`Upload Failed: ${err.message || err}`);
+                                  })
+                                  .finally(() => {
+                                    setUploadingOgImage(false);
+                                  });
+                              }
+                            }}
+                          />
+                          <button
+                            type="button"
+                            onClick={() => document.getElementById("seo-og-upload")?.click()}
+                            disabled={uploadingOgImage}
+                            className="bg-stone-900 hover:bg-stone-800 text-white font-bold text-[10.5px] px-3.5 py-2 rounded-lg cursor-pointer flex items-center gap-1 font-sans shadow-sm uppercase disabled:opacity-50"
+                          >
+                            {uploadingOgImage ? (
+                              <RefreshCw className="w-3 h-3 animate-spin" />
+                            ) : (
+                              <UploadCloud className="w-3.5 h-3.5" />
+                            )}
+                            Upload File
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Actions Area */}
+                    <div className="flex gap-3 pt-4 border-t border-stone-150">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          try {
+                            const seoPageLabels: Record<string, string> = {
+                              home: "Boutique Home / Storefront",
+                              "about-us": "Heritage / About Atelier",
+                              "contact-us": "Contact Support & Gifting",
+                              "privacy-policy": "Privacy Policy & Security",
+                              "terms-conditions": "Terms & Conditions",
+                              "shipping-policy": "Logistics & Shipping Policy",
+                              "return-refund": "Refund & Cancellation Policy"
+                            };
+                            
+                            if (!onSeoDataChange) {
+                              triggerToast("SEO configuration handler is not active in this sandbox preview.", true);
+                              return;
+                            }
+                            
+                            const updated = {
+                              ...(seoData || {}),
+                              [seoActivePage]: {
+                                title: localTitle,
+                                description: localDescription,
+                                keywords: localKeywords,
+                                ogTitle: localOgTitle,
+                                ogDescription: localOgDescription,
+                                ogImage: localOgImage || "https://res.cloudinary.com/dy7avkqub/image/upload/q_auto/f_auto/v1780577005/main-sample.jpg"
+                              }
+                            };
+                            
+                            onSeoDataChange(updated);
+                            triggerToast(`✨ SEO rules for [${seoPageLabels[seoActivePage] || seoActivePage}] have been successfully deployed!`);
+                          } catch (err: any) {
+                            console.error("SEO deployment error:", err);
+                            triggerToast(`Error deploying SEO rules: ${err.message || err}`, true);
+                          }
+                        }}
+                        className="flex-1 bg-stone-900 hover:bg-stone-800 text-white text-xs font-bold uppercase py-3 rounded-lg tracking-widest cursor-pointer transition-colors shadow flex items-center justify-center gap-2"
+                      >
+                        <ShieldCheck className="w-4 h-4 text-[#D4AF37]" />
+                        Deploy SEO Rules
+                      </button>
+                      
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const defaultMapping: Record<string, SEOMetadata> = {
+                            home: {
+                              title: "MYRA Luxury | Premium Fragrances, Leather & Handcrafted Essentials",
+                              description: "Discover the premium collections of MYRA Luxury. Crafted with standard sensory ingredients, full-grain Italian leather, and hand-milled botanical soaps.",
+                              keywords: "perfume, fragrance, luxury, leather belt, minimalist RFID wallet, organic soap, luxury gift sets, Myra, Indian craftsmanship",
+                              ogTitle: "MYRA Luxury - Premium Fragrances & Leather Essentials",
+                              ogDescription: "Immerse yourself in sensory perfection. Experience the finest selection of hand-poured perfumes and bespoke leathers.",
+                              ogImage: "https://res.cloudinary.com/dy7avkqub/image/upload/q_auto/f_auto/v1780577005/main-sample.jpg"
+                            },
+                            "about-us": {
+                              title: "About Our Heritage | MYRA Luxury Atelier",
+                              description: "Read about the heritage, dedication, and traditional craftsmanship under the signature of the MYRA Luxury Atelier.",
+                              keywords: "heritage, luxury brand story, organic ingredients, bespoke leather, traditional soap making",
+                              ogTitle: "Our Heritage - MYRA Luxury Atelier",
+                              ogDescription: "A tale of traditional Indian formulations and exquisite contemporary design.",
+                              ogImage: "https://res.cloudinary.com/dy7avkqub/image/upload/q_auto/f_auto/v1780577005/main-sample.jpg"
+                            },
+                            "contact-us": {
+                              title: "Contact Our Curators | MYRA Luxury Atelier",
+                              description: "Get in touch with MYRA Luxury's priority customer care, corporate gifting, and bespoke fragrance customization desk.",
+                              keywords: "contact support, customer care, bespoke perfumes, luxury gifting",
+                              ogTitle: "Connect with MYRA Luxury",
+                              ogDescription: "Speak to our priority customer consultants and experience personalized luxury shopping.",
+                              ogImage: "https://res.cloudinary.com/dy7avkqub/image/upload/q_auto/f_auto/v1780577005/main-sample.jpg"
+                            },
+                            "privacy-policy": {
+                              title: "Privacy Policy | MYRA Luxury Compliance",
+                              description: "Your digital privacy, transactions, and user identity credentials are secure under our enterprise-grade encryption.",
+                              keywords: "privacy policy, data protection, security, checkout compliance",
+                              ogTitle: "Privacy & Data Safeguards | MYRA Luxury",
+                              ogDescription: "Read how we secure your online checkout credentials and details.",
+                              ogImage: "https://res.cloudinary.com/dy7avkqub/image/upload/q_auto/f_auto/v1780577005/main-sample.jpg"
+                            },
+                            "terms-conditions": {
+                              title: "Terms & Conditions | MYRA Luxury",
+                              description: "The legal terms, carriage guidelines, and purchase conditions for the premium catalog collections of MYRA Luxury.",
+                              keywords: "terms and conditions, user agreement, purchase terms",
+                              ogTitle: "Terms of Carriage & Compliance | MYRA Luxury",
+                              ogDescription: "Browse terms governing user access, orders, and legal transactions.",
+                              ogImage: "https://res.cloudinary.com/dy7avkqub/image/upload/q_auto/f_auto/v1780577005/main-sample.jpg"
+                            },
+                            "shipping-policy": {
+                              title: "Shipping & Delivery Policy | MYRA Luxury Logistics",
+                              description: "Fast-tracked 2-4 business days air dispatch in coordination with Delhivery Logistics. Fully tracked and secure shipment delivery.",
+                              keywords: "shipping policy, Delhivery tracking, dispatch, express delivery",
+                              ogTitle: "Delhivery Premium Shipping Guidelines | MYRA Luxury",
+                              ogDescription: "Learn about package transit times, shipping rates, and AWB tracking.",
+                              ogImage: "https://res.cloudinary.com/dy7avkqub/image/upload/q_auto/f_auto/v1780577005/main-sample.jpg"
+                            },
+                            "return-refund": {
+                              title: "Return & Refund Policy | MYRA Luxury Standards",
+                              description: "Enjoy stress-free refunds on damaged goods in 5-7 business days. Damaged items can be reported within 48 hours for immediate replacement.",
+                              keywords: "returns, refund policy, satisfaction guarantee, refund processing",
+                              ogTitle: "Refund Policy & Guarantees | MYRA Luxury",
+                              ogDescription: "Review our boutique terms for cancellations, damage reports, and refunds.",
+                              ogImage: "https://res.cloudinary.com/dy7avkqub/image/upload/q_auto/f_auto/v1780577005/main-sample.jpg"
+                            }
+                          };
+                          
+                          const original = defaultMapping[seoActivePage];
+                          if (original) {
+                            setLocalTitle(original.title);
+                            setLocalDescription(original.description);
+                            setLocalKeywords(original.keywords);
+                            setLocalOgTitle(original.ogTitle);
+                            setLocalOgDescription(original.ogDescription);
+                            setLocalOgImage(original.ogImage);
+                            triggerToast("🔄 Standard parameters loaded. Press Deploy to apply!");
+                          }
+                        }}
+                        className="bg-stone-50 hover:bg-stone-100 border border-stone-200 text-stone-700 text-xs font-bold uppercase px-4 py-3 rounded-lg cursor-pointer transition-colors"
+                      >
+                        Reset Default
+                      </button>
+                    </div>
+
+                  </div>
+
+                  {/* Right Column: Previews Side Simulator */}
+                  <div className="space-y-6 lg:border-l lg:border-stone-200 lg:pl-8">
+                    <h4 className="text-xs font-serif font-extrabold uppercase tracking-widest text-[#8F633E] border-b border-stone-150 pb-1 font-sans">
+                      Search Engine & Social Media Simulator
+                    </h4>
+
+                    {/* Google Search Result Simulator */}
+                    <div className="space-y-2">
+                      <span className="text-[10.5px] font-bold text-stone-500 uppercase tracking-wider block">
+                        🔍 Google Desktop Search Snippet
+                      </span>
+                      <div className="bg-white border border-stone-200 rounded-xl p-4 shadow-sm space-y-1 font-sans text-left">
+                        <span className="text-xs text-stone-500 block font-normal leading-tight font-sans truncate">
+                          https://myraluxury.com {seoActivePage !== "home" && `› ${seoActivePage}`}
+                        </span>
+                        <h4 className="text-sm text-[#1a0dab] hover:underline font-normal leading-snug cursor-pointer truncate font-sans">
+                          {localTitle || "Premium Luxury Atelier"}
+                        </h4>
+                        <p className="text-xs text-[#4d5156] leading-relaxed font-normal font-sans line-clamp-2">
+                          {localDescription || "No description provided yet. Add an HTML Meta description to attract organic shoppers."}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Social Share Preview Card (WhatsApp / Facebook) */}
+                    <div className="space-y-2">
+                      <span className="text-[10.5px] font-bold text-stone-500 uppercase tracking-wider block">
+                        📱 Social Share Link Card Preview
+                      </span>
+                      <div className="bg-stone-50 border border-stone-200 rounded-xl overflow-hidden shadow-sm max-w-sm mx-auto text-left">
+                        {/* Simulated Image Area */}
+                        <div className="h-44 bg-stone-100 relative overflow-hidden flex items-center justify-center border-b border-stone-150">
+                          {localOgImage ? (
+                            <img
+                              src={localOgImage}
+                              alt="Social preview banner"
+                              referrerPolicy="no-referrer"
+                              className="w-full h-full object-cover"
+                            />
+                          ) : (
+                            <div className="text-center p-4">
+                              <Globe className="w-10 h-10 text-stone-300 mx-auto mb-2" />
+                              <span className="text-[10px] text-stone-400 font-mono block">No OG Image Specified</span>
+                            </div>
+                          )}
+                          <div className="absolute top-2 left-2 bg-stone-900/80 backdrop-blur-sm text-white text-[8px] font-bold px-2 py-0.5 rounded tracking-wider uppercase">
+                            Open Graph Media Node
+                          </div>
+                        </div>
+                        {/* Summary Details */}
+                        <div className="p-3.5 space-y-1 bg-[#F5F4F0]">
+                          <span className="text-[9.5px] font-mono text-stone-400 block uppercase tracking-wider">
+                            myraluxury.com
+                          </span>
+                          <h5 className="text-xs font-bold text-stone-900 leading-snug line-clamp-1 font-sans">
+                            {localOgTitle || localTitle || "MYRA Luxury"}
+                          </h5>
+                          <p className="text-[11px] text-stone-600 leading-relaxed line-clamp-2 font-normal font-sans">
+                            {localOgDescription || localDescription || "Experience sensory and leather perfection."}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Pro Tip Box */}
+                    <div className="bg-[#FAF8F5] border border-stone-200/60 rounded-xl p-4 text-[11px] text-stone-600 space-y-1 leading-relaxed">
+                      <span className="font-bold text-stone-900 block font-serif">✨ Curation Guidelines:</span>
+                      <p>• <strong>Meta Titles:</strong> Use elegant, concise text. Place the primary keyword first, followed by your brand name.</p>
+                      <p>• <strong>Descriptions:</strong> Write compelling copy to increase search click-through rates. Ensure it stays under 160 characters.</p>
+                      <p>• <strong>Open Graph Images:</strong> Best size is 1200x630 pixels. Use lifestyle product shots with clean, minimal luxury spacing.</p>
+                    </div>
+
+                  </div>
+
+                </div>
+
+              </div>
             )}
 
             {/* DELHI VERY ADMINISTRATIVE CONTROL & LOGISTICS DESK */}

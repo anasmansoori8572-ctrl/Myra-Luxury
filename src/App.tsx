@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import { products, storeLocations } from "./data";
-import { Product, CartItem, ContactMessage, StoreLocation } from "./types";
+import { Product, CartItem, ContactMessage, StoreLocation, SEOMetadata } from "./types";
 import { ProductVisual } from "./components/ProductVisual";
 import { ProductDetailModal } from "./components/ProductDetailModal";
 import { CartDrawer } from "./components/CartDrawer";
@@ -139,37 +139,113 @@ export default function App() {
   // Compliance pages state and SEO effects
   const [activeLegalPage, setActiveLegalPage] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (activeLegalPage) {
-      window.scrollTo({ top: 0, behavior: "smooth" });
-      
-      const titles: Record<string, string> = {
-        "about-us": "About Our Heritage | Myra Luxury",
-        "contact-us": "Contact Our Curators | Myra Luxury",
-        "privacy-policy": "Privacy Policy & Credentials | Myra Luxury",
-        "terms-conditions": "Terms & Conditions of Compliance | Myra Luxury",
-        "shipping-policy": "Shipping & Logistics Policy | Myra Luxury",
-        "return-refund": "Return & Refund Policies | Myra Luxury"
-      };
-      
-      const descriptions: Record<string, string> = {
-        "about-us": "Discover the heritage of Myra Luxury. Read about our dedication to premium perfumes, Italian leather accessories, and hand-milled botanical soaps.",
-        "contact-us": "Get in touch with Myra Luxury's priority curation house. View our certified physical office and reach our customer support team directly.",
-        "privacy-policy": "Read the Myra Luxury Privacy Policy. Learn how we secure your online credentials and payment safety guidelines in compliance with Razorpay standards.",
-        "terms-conditions": "Browse through the official Terms & Conditions governing Myra Luxury transactions, user terms, and legal carriage agreements.",
-        "shipping-policy": "Read our standard India Shipping Policy. Information on dispatch timelines, courier associates, packaging standards, and tracking numbers.",
-        "return-refund": "Read about our Return and Refund policy. Learn about damaged product reporting within 48 hours, unused conditions, and the 5-7 business days refund process."
-      };
-      
-      document.title = titles[activeLegalPage] || "Myra Luxury Atelier";
-      const metaDesc = document.querySelector('meta[name="description"]');
-      if (metaDesc) {
-        metaDesc.setAttribute("content", descriptions[activeLegalPage] || "Myra Luxury - Premium Fragrances and Leather essentials.");
+  const [seoData, setSeoData] = useState<Record<string, SEOMetadata>>(() => {
+    try {
+      const saved = localStorage.getItem("myra_seo_data");
+      if (saved) {
+        return JSON.parse(saved);
       }
-    } else {
-      document.title = "Myra Luxury | Premium Fragrances & Leather Essentials";
+    } catch {}
+    return {
+      home: {
+        title: "MYRA Luxury | Premium Fragrances, Leather & Handcrafted Essentials",
+        description: "Discover the premium collections of MYRA Luxury. Crafted with standard sensory ingredients, full-grain Italian leather, and hand-milled botanical soaps.",
+        keywords: "perfume, fragrance, luxury, leather belt, minimalist RFID wallet, organic soap, luxury gift sets, Myra, Indian craftsmanship",
+        ogTitle: "MYRA Luxury - Premium Fragrances & Leather Essentials",
+        ogDescription: "Immerse yourself in sensory perfection. Experience the finest selection of hand-poured perfumes and bespoke leathers.",
+        ogImage: "https://res.cloudinary.com/dy7avkqub/image/upload/q_auto/f_auto/v1780577005/main-sample.jpg"
+      },
+      "about-us": {
+        title: "About Our Heritage | MYRA Luxury Atelier",
+        description: "Read about the heritage, dedication, and traditional craftsmanship under the signature of the MYRA Luxury Atelier.",
+        keywords: "heritage, luxury brand story, organic ingredients, bespoke leather, traditional soap making",
+        ogTitle: "Our Heritage - MYRA Luxury Atelier",
+        ogDescription: "A tale of traditional Indian formulations and exquisite contemporary design.",
+        ogImage: "https://res.cloudinary.com/dy7avkqub/image/upload/q_auto/f_auto/v1780577005/main-sample.jpg"
+      },
+      "contact-us": {
+        title: "Contact Our Curators | MYRA Luxury Atelier",
+        description: "Get in touch with MYRA Luxury's priority customer care, corporate gifting, and bespoke fragrance customization desk.",
+        keywords: "contact support, customer care, bespoke perfumes, luxury gifting",
+        ogTitle: "Connect with MYRA Luxury",
+        ogDescription: "Speak to our priority customer consultants and experience personalized luxury shopping.",
+        ogImage: "https://res.cloudinary.com/dy7avkqub/image/upload/q_auto/f_auto/v1780577005/main-sample.jpg"
+      },
+      "privacy-policy": {
+        title: "Privacy Policy | MYRA Luxury Compliance",
+        description: "Your digital privacy, transactions, and user identity credentials are secure under our enterprise-grade encryption.",
+        keywords: "privacy policy, data protection, security, checkout compliance",
+        ogTitle: "Privacy & Data Safeguards | MYRA Luxury",
+        ogDescription: "Read how we secure your online checkout credentials and details.",
+        ogImage: "https://res.cloudinary.com/dy7avkqub/image/upload/q_auto/f_auto/v1780577005/main-sample.jpg"
+      },
+      "terms-conditions": {
+        title: "Terms & Conditions | MYRA Luxury",
+        description: "The legal terms, carriage guidelines, and purchase conditions for the premium catalog collections of MYRA Luxury.",
+        keywords: "terms and conditions, user agreement, purchase terms",
+        ogTitle: "Terms of Carriage & Compliance | MYRA Luxury",
+        ogDescription: "Browse terms governing user access, orders, and legal transactions.",
+        ogImage: "https://res.cloudinary.com/dy7avkqub/image/upload/q_auto/f_auto/v1780577005/main-sample.jpg"
+      },
+      "shipping-policy": {
+        title: "Shipping & Delivery Policy | MYRA Luxury Logistics",
+        description: "Fast-tracked 2-4 business days air dispatch in coordination with Delhivery Logistics. Fully tracked and secure shipment delivery.",
+        keywords: "shipping policy, Delhivery tracking, dispatch, express delivery",
+        ogTitle: "Delhivery Premium Shipping Guidelines | MYRA Luxury",
+        ogDescription: "Learn about package transit times, shipping rates, and AWB tracking.",
+        ogImage: "https://res.cloudinary.com/dy7avkqub/image/upload/q_auto/f_auto/v1780577005/main-sample.jpg"
+      },
+      "return-refund": {
+        title: "Return & Refund Policy | MYRA Luxury Standards",
+        description: "Enjoy stress-free refunds on damaged goods in 5-7 business days. Damaged items can be reported within 48 hours for immediate replacement.",
+        keywords: "returns, refund policy, satisfaction guarantee, refund processing",
+        ogTitle: "Refund Policy & Guarantees | MYRA Luxury",
+        ogDescription: "Review our boutique terms for cancellations, damage reports, and refunds.",
+        ogImage: "https://res.cloudinary.com/dy7avkqub/image/upload/q_auto/f_auto/v1780577005/main-sample.jpg"
+      }
+    };
+  });
+
+  useEffect(() => {
+    const currentPageKey = activeLegalPage || "home";
+    const currentSEO = seoData[currentPageKey];
+    
+    if (currentSEO) {
+      if (activeLegalPage) {
+        window.scrollTo({ top: 0, behavior: "smooth" });
+      }
+      
+      document.title = currentSEO.title;
+      
+      // Helper to get or create a meta tag
+      const setMetaTag = (attributeName: string, attributeValue: string, contentValue: string) => {
+        let tag = document.querySelector(`meta[${attributeName}="${attributeValue}"]`);
+        if (!tag) {
+          tag = document.createElement("meta");
+          tag.setAttribute(attributeName, attributeValue);
+          document.head.appendChild(tag);
+        }
+        tag.setAttribute("content", contentValue);
+      };
+
+      // Set standard description & keywords
+      setMetaTag("name", "description", currentSEO.description);
+      setMetaTag("name", "keywords", currentSEO.keywords);
+
+      // Set Open Graph tags
+      setMetaTag("property", "og:title", currentSEO.ogTitle);
+      setMetaTag("property", "og:description", currentSEO.ogDescription);
+      setMetaTag("property", "og:image", currentSEO.ogImage);
+      setMetaTag("property", "og:type", "website");
+      setMetaTag("property", "og:url", window.location.href);
+
+      // Set Twitter Card tags
+      setMetaTag("name", "twitter:card", "summary_large_image");
+      setMetaTag("name", "twitter:title", currentSEO.ogTitle);
+      setMetaTag("name", "twitter:description", currentSEO.ogDescription);
+      setMetaTag("name", "twitter:image", currentSEO.ogImage);
     }
-  }, [activeLegalPage]);
+  }, [activeLegalPage, seoData]);
   
   // Newsletter state
   const [newsletterEmail, setNewsletterEmail] = useState<string>("");
@@ -721,7 +797,7 @@ export default function App() {
 
       {/* Toast Notification */}
       {toastMessage && (
-        <div className="fixed bottom-6 left-6 z-50 bg-stone-900 border border-white/10 text-white rounded-2xl px-5 py-3.5 shadow-2xl flex items-center gap-3 animate-bounce">
+        <div className="fixed bottom-6 left-6 z-[9999] bg-stone-900 border border-white/10 text-white rounded-2xl px-5 py-3.5 shadow-2xl flex items-center gap-3 animate-bounce">
           <Sparkles className="w-4 h-4 text-amber-400" />
           <span className="text-xs font-semibold tracking-wide font-sans">{toastMessage}</span>
         </div>
@@ -2893,6 +2969,11 @@ export default function App() {
           onCompanySubtitleChange={setCompanySubtitle}
           bannerUrl={bannerUrl}
           onBannerUrlChange={setBannerUrl}
+          seoData={seoData}
+          onSeoDataChange={(newSeoData) => {
+            setSeoData(newSeoData);
+            localStorage.setItem("myra_seo_data", JSON.stringify(newSeoData));
+          }}
         />
       )}
 
