@@ -58,15 +58,21 @@ function compressAndResizeImage(
           return;
         }
 
-        // Fill with white background (useful for transparent PNG conversion to JPG)
-        ctx.fillStyle = "#FFFFFF";
-        ctx.fillRect(0, 0, width, height);
+        // Check if the uploaded file is a format that supports transparency (PNG, WEBP, GIF, SVG)
+        const isTransparentType = file.type === "image/png" || file.type === "image/gif" || file.type === "image/webp" || file.type === "image/svg+xml";
+
+        if (!isTransparentType) {
+          // Fill with white background (useful for non-transparent images to JPG conversion)
+          ctx.fillStyle = "#FFFFFF";
+          ctx.fillRect(0, 0, width, height);
+        }
 
         // Draw image onto canvas
         ctx.drawImage(img, 0, 0, width, height);
 
-        // Export compression JPG data stream (massive size reduction)
-        const compressedBase64 = canvas.toDataURL("image/jpeg", quality);
+        // Export compression PNG/WEBP data stream for transparent files, or JPEG for others
+        const exportMime = isTransparentType ? "image/png" : "image/jpeg";
+        const compressedBase64 = canvas.toDataURL(exportMime, isTransparentType ? undefined : quality);
         console.log(`[Compression Engine]: Compressed image from ${file.size} bytes down to base64 size of ${compressedBase64.length} chars (approx ${Math.round(compressedBase64.length * 0.75)} bytes)`);
         resolve(compressedBase64);
       };
