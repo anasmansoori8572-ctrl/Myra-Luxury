@@ -29,7 +29,8 @@ dotenv.config();
 const app = express();
 const PORT = 3000;
 
-app.use(express.json());
+app.use(express.json({ limit: "50mb" }));
+app.use(express.urlencoded({ limit: "50mb", extended: true }));
 
 // Path to data files
 const DATA_DIR = path.join(process.cwd(), "src", "data");
@@ -146,9 +147,11 @@ async function firestoreGetDoc(collName: string, docId: string): Promise<any | n
 
 async function firestoreSetDoc(collName: string, docId: string, data: any): Promise<boolean> {
   const firestoreDb = getDB();
-  if (!firestoreDb) return false;
+  if (!firestoreDb) throw new Error("Firestore database is not initialized.");
+  if (!docId) throw new Error(`Cannot write document to ${collName} without a valid document ID.`);
   
   let retries = 3;
+  let lastError: any = null;
   while (retries > 0) {
     try {
       const cleaned = JSON.parse(JSON.stringify(data));
@@ -157,19 +160,22 @@ async function firestoreSetDoc(collName: string, docId: string, data: any): Prom
       return true;
     } catch (err) {
       retries--;
+      lastError = err;
       console.error(`[Firestore Set Doc ${collName}/${docId}] Failed to save. Retries remaining: ${retries}`, err);
-      if (retries === 0) return false;
+      if (retries === 0) throw err;
       await new Promise(r => setTimeout(r, 1000));
     }
   }
-  return false;
+  throw lastError || new Error(`Failed to save document to ${collName}/${docId}`);
 }
 
 async function firestoreDeleteDoc(collName: string, docId: string): Promise<boolean> {
   const firestoreDb = getDB();
-  if (!firestoreDb) return false;
+  if (!firestoreDb) throw new Error("Firestore database is not initialized.");
+  if (!docId) throw new Error(`Cannot delete document from ${collName} without a valid document ID.`);
   
   let retries = 3;
+  let lastError: any = null;
   while (retries > 0) {
     try {
       const docRef = doc(firestoreDb, collName, docId);
@@ -177,12 +183,13 @@ async function firestoreDeleteDoc(collName: string, docId: string): Promise<bool
       return true;
     } catch (err) {
       retries--;
+      lastError = err;
       console.error(`[Firestore Delete Doc ${collName}/${docId}] Failed to delete. Retries remaining: ${retries}`, err);
-      if (retries === 0) return false;
+      if (retries === 0) throw err;
       await new Promise(r => setTimeout(r, 1000));
     }
   }
-  return false;
+  throw lastError || new Error(`Failed to delete document from ${collName}/${docId}`);
 }
 
 // Seeding and Migrations
@@ -473,6 +480,152 @@ app.get("/api/debug-firebase", async (req, res) => {
       stack: err.stack,
       code: err.code
     });
+  }
+});
+
+// Proxy endpoints for Products
+app.get("/api/products", async (req, res) => {
+  try {
+    const list = await firestoreGetCollection("products");
+    res.json(list);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || err.toString() });
+  }
+});
+
+app.post("/api/products/sync", async (req, res) => {
+  try {
+    const dbProducts = req.body;
+    if (!Array.isArray(dbProducts)) {
+      return res.status(400).json({ error: "Expected array of products" });
+    }
+    
+    // Save/update products in the array
+    for (const p of dbProducts) {
+      await firestoreSetDoc("products", p.id, p);
+    }
+    
+    // Clean up deleted products
+    const currentList = await firestoreGetCollection("products");
+    const updatedIds = dbProducts.map((p: any) => p.id);
+    for (const docObj of currentList) {
+      if (!updatedIds.includes(docObj.id)) {
+        await firestoreDeleteDoc("products", docObj.id);
+      }
+    }
+    
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || err.toString() });
+  }
+});
+
+// Proxy endpoints for Locations
+app.get("/api/locations", async (req, res) => {
+  try {
+    const list = await firestoreGetCollection("locations");
+    res.json(list);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || err.toString() });
+  }
+});
+
+app.post("/api/locations/sync", async (req, res) => {
+  try {
+    const dbLocations = req.body;
+    if (!Array.isArray(dbLocations)) {
+      return res.status(400).json({ error: "Expected array of locations" });
+    }
+    
+    for (const l of dbLocations) {
+      await firestoreSetDoc("locations", l.id, l);
+    }
+    
+    const currentList = await firestoreGetCollection("locations");
+    const updatedIds = dbLocations.map((l: any) => l.id);
+    for (const docObj of currentList) {
+      if (!updatedIds.includes(docObj.id)) {
+        await firestoreDeleteDoc("locations", docObj.id);
+      }
+    }
+    
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || err.toString() });
+  }
+});
+
+// Proxy endpoints for Branding Config
+app.get("/api/configs/branding", async (req, res) => {
+  try {
+    const branding = await firestoreGetDoc("configs", "branding");
+    res.json(branding || {});
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || err.toString() });
+  }
+});
+
+app.post("/api/configs/branding", async (req, res) => {
+  try {
+    await firestoreSetDoc("configs", "branding", req.body);
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || err.toString() });
+  }
+});
+
+// Proxy endpoints for SEO Config
+app.get("/api/configs/seo", async (req, res) => {
+  try {
+    const seo = await firestoreGetDoc("configs", "seo");
+    res.json(seo || {});
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || err.toString() });
+  }
+});
+
+app.post("/api/configs/seo", async (req, res) => {
+  try {
+    await firestoreSetDoc("configs", "seo", req.body);
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || err.toString() });
+  }
+});
+
+// Proxy endpoints for Support Messages
+app.get("/api/messages", async (req, res) => {
+  try {
+    const list = await firestoreGetCollection("messages");
+    list.sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+    res.json(list);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || err.toString() });
+  }
+});
+
+app.post("/api/messages/sync", async (req, res) => {
+  try {
+    const messages = req.body;
+    if (!Array.isArray(messages)) {
+      return res.status(400).json({ error: "Expected array of messages" });
+    }
+    
+    for (const m of messages) {
+      await firestoreSetDoc("messages", m.id, m);
+    }
+    
+    const currentList = await firestoreGetCollection("messages");
+    const updatedIds = messages.map((m: any) => m.id);
+    for (const docObj of currentList) {
+      if (!updatedIds.includes(docObj.id)) {
+        await firestoreDeleteDoc("messages", docObj.id);
+      }
+    }
+    
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || err.toString() });
   }
 });
 

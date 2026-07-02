@@ -429,68 +429,77 @@ export default function App() {
   useEffect(() => {
     const loadAllFromFirestore = async () => {
       try {
-        console.log("[Firestore Sync]: Fetching boutique collections from Cloud DB...");
+        console.log("[Firestore Sync]: Fetching boutique collections from Cloud DB via proxy...");
         // 1. Fetch Products
-        const prodSnap = await getDocs(collection(db, "products"));
-        if (!prodSnap.empty) {
-          const list = prodSnap.docs.map(doc => doc.data() as Product);
-          setDbProducts(list);
-          localStorage.setItem("myra_products", JSON.stringify(list));
+        const prodRes = await fetch("/api/products");
+        if (prodRes.ok) {
+          const list = await prodRes.json();
+          if (Array.isArray(list) && list.length > 0) {
+            setDbProducts(list);
+            localStorage.setItem("myra_products", JSON.stringify(list));
+          }
         }
 
         // 2. Fetch Locations
-        const locSnap = await getDocs(collection(db, "locations"));
-        if (!locSnap.empty) {
-          const list = locSnap.docs.map(doc => doc.data() as StoreLocation);
-          setDbLocations(list);
-          localStorage.setItem("myra_locations", JSON.stringify(list));
+        const locRes = await fetch("/api/locations");
+        if (locRes.ok) {
+          const list = await locRes.json();
+          if (Array.isArray(list) && list.length > 0) {
+            setDbLocations(list);
+            localStorage.setItem("myra_locations", JSON.stringify(list));
+          }
         }
 
         // 3. Fetch Branding Configurations
-        const brandingSnap = await getDoc(doc(db, "configs", "branding"));
-        if (brandingSnap.exists()) {
-          const data = brandingSnap.data();
-          if (data.videoUrl) {
-            setVideoUrl(data.videoUrl);
-            localStorage.setItem("myra_video_url", data.videoUrl);
-          }
-          if (data.heroBgUrl) {
-            setHeroBgUrl(data.heroBgUrl);
-            localStorage.setItem("myra_hero_bg_url", data.heroBgUrl);
-          }
-          if (data.logoUrl) {
-            setLogoUrl(data.logoUrl);
-            localStorage.setItem("myra_logo_url", data.logoUrl);
-          }
-          if (data.companyName) {
-            setCompanyName(data.companyName);
-            localStorage.setItem("myra_company_name", data.companyName);
-          }
-          if (data.companySubtitle) {
-            setCompanySubtitle(data.companySubtitle);
-            localStorage.setItem("myra_company_subtitle", data.companySubtitle);
-          }
-          if (data.bannerUrl) {
-            setBannerUrl(data.bannerUrl);
-            localStorage.setItem("myra_banner_url", data.bannerUrl);
+        const brandingRes = await fetch("/api/configs/branding");
+        if (brandingRes.ok) {
+          const data = await brandingRes.json();
+          if (data && Object.keys(data).length > 0) {
+            if (data.videoUrl) {
+              setVideoUrl(data.videoUrl);
+              localStorage.setItem("myra_video_url", data.videoUrl);
+            }
+            if (data.heroBgUrl) {
+              setHeroBgUrl(data.heroBgUrl);
+              localStorage.setItem("myra_hero_bg_url", data.heroBgUrl);
+            }
+            if (data.logoUrl) {
+              setLogoUrl(data.logoUrl);
+              localStorage.setItem("myra_logo_url", data.logoUrl);
+            }
+            if (data.companyName) {
+              setCompanyName(data.companyName);
+              localStorage.setItem("myra_company_name", data.companyName);
+            }
+            if (data.companySubtitle) {
+              setCompanySubtitle(data.companySubtitle);
+              localStorage.setItem("myra_company_subtitle", data.companySubtitle);
+            }
+            if (data.bannerUrl) {
+              setBannerUrl(data.bannerUrl);
+              localStorage.setItem("myra_banner_url", data.bannerUrl);
+            }
           }
         }
 
         // 4. Fetch SEO configurations
-        const seoSnap = await getDoc(doc(db, "configs", "seo"));
-        if (seoSnap.exists()) {
-          const data = seoSnap.data() as SEOMetadata;
-          setSeoData(data);
-          localStorage.setItem("myra_seo_data", JSON.stringify(data));
+        const seoRes = await fetch("/api/configs/seo");
+        if (seoRes.ok) {
+          const data = await seoRes.json();
+          if (data && Object.keys(data).length > 0) {
+            setSeoData(data);
+            localStorage.setItem("myra_seo_data", JSON.stringify(data));
+          }
         }
 
         // 5. Fetch Messages
-        const msgSnap = await getDocs(collection(db, "messages"));
-        if (!msgSnap.empty) {
-          const list = msgSnap.docs.map(doc => doc.data() as ContactMessage);
-          list.sort((a, b) => (b.date || "").localeCompare(a.date || ""));
-          setMessages(list);
-          localStorage.setItem("myra_messages", JSON.stringify(list));
+        const msgRes = await fetch("/api/messages");
+        if (msgRes.ok) {
+          const list = await msgRes.json();
+          if (Array.isArray(list) && list.length > 0) {
+            setMessages(list);
+            localStorage.setItem("myra_messages", JSON.stringify(list));
+          }
         }
       } catch (err) {
         console.error("[Firestore Sync Error]: Failed to populate boutique states on boot, using offline cache fallback.", err);
@@ -519,20 +528,15 @@ export default function App() {
     
     const syncProducts = async () => {
       try {
-        console.log("[Firestore Sync]: Writing updated products catalog to cloud database...");
-        for (const p of dbProducts) {
-          await setDoc(doc(db, "products", p.id), p);
-        }
-        // Safely prune deleted products
-        const currentSnap = await getDocs(collection(db, "products"));
-        const updatedIds = dbProducts.map(p => p.id);
-        for (const docObj of currentSnap.docs) {
-          if (!updatedIds.includes(docObj.id)) {
-            await deleteDoc(doc(db, "products", docObj.id));
-          }
-        }
+        console.log("[Firestore Sync]: Syncing products catalog via proxy API...");
+        const res = await fetch("/api/products/sync", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(dbProducts)
+        });
+        if (!res.ok) throw new Error(await res.text());
       } catch (err) {
-        console.error("Failed to sync products to Firestore:", err);
+        console.error("Failed to sync products via proxy:", err);
       }
     };
     syncProducts();
@@ -551,20 +555,15 @@ export default function App() {
 
     const syncMessages = async () => {
       try {
-        console.log("[Firestore Sync]: Writing updated support messages to cloud database...");
-        for (const m of messages) {
-          await setDoc(doc(db, "messages", m.id), m);
-        }
-        // Safely prune deleted messages
-        const currentSnap = await getDocs(collection(db, "messages"));
-        const updatedIds = messages.map(m => m.id);
-        for (const docObj of currentSnap.docs) {
-          if (!updatedIds.includes(docObj.id)) {
-            await deleteDoc(doc(db, "messages", docObj.id));
-          }
-        }
+        console.log("[Firestore Sync]: Syncing support messages via proxy API...");
+        const res = await fetch("/api/messages/sync", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(messages)
+        });
+        if (!res.ok) throw new Error(await res.text());
       } catch (err) {
-        console.error("Failed to sync support messages to Firestore:", err);
+        console.error("Failed to sync support messages via proxy:", err);
       }
     };
     syncMessages();
@@ -578,20 +577,15 @@ export default function App() {
 
     const syncLocations = async () => {
       try {
-        console.log("[Firestore Sync]: Writing updated boutique locations to cloud database...");
-        for (const l of dbLocations) {
-          await setDoc(doc(db, "locations", l.id), l);
-        }
-        // Safely prune deleted locations
-        const currentSnap = await getDocs(collection(db, "locations"));
-        const updatedIds = dbLocations.map(l => l.id);
-        for (const docObj of currentSnap.docs) {
-          if (!updatedIds.includes(docObj.id)) {
-            await deleteDoc(doc(db, "locations", docObj.id));
-          }
-        }
+        console.log("[Firestore Sync]: Syncing boutique locations via proxy API...");
+        const res = await fetch("/api/locations/sync", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(dbLocations)
+        });
+        if (!res.ok) throw new Error(await res.text());
       } catch (err) {
-        console.error("Failed to sync locations to Firestore:", err);
+        console.error("Failed to sync locations via proxy:", err);
       }
     };
     syncLocations();
@@ -610,18 +604,23 @@ export default function App() {
 
     const syncBranding = async () => {
       try {
-        console.log("[Firestore Sync]: Writing updated branding configuration to cloud database...");
-        await setDoc(doc(db, "configs", "branding"), {
-          videoUrl,
-          heroBgUrl,
-          logoUrl,
-          companyName,
-          companySubtitle,
-          bannerUrl,
-          updatedAt: new Date().toISOString()
+        console.log("[Firestore Sync]: Syncing branding configuration via proxy API...");
+        const res = await fetch("/api/configs/branding", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            videoUrl,
+            heroBgUrl,
+            logoUrl,
+            companyName,
+            companySubtitle,
+            bannerUrl,
+            updatedAt: new Date().toISOString()
+          })
         });
+        if (!res.ok) throw new Error(await res.text());
       } catch (err) {
-        console.error("Failed to sync branding configurations to Firestore:", err);
+        console.error("Failed to sync branding configurations via proxy:", err);
       }
     };
     syncBranding();
@@ -635,10 +634,15 @@ export default function App() {
 
     const syncSeo = async () => {
       try {
-        console.log("[Firestore Sync]: Writing updated SEO configurations to cloud database...");
-        await setDoc(doc(db, "configs", "seo"), seoData);
+        console.log("[Firestore Sync]: Syncing SEO configurations via proxy API...");
+        const res = await fetch("/api/configs/seo", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(seoData)
+        });
+        if (!res.ok) throw new Error(await res.text());
       } catch (err) {
-        console.error("Failed to sync SEO configurations to Firestore:", err);
+        console.error("Failed to sync SEO configurations via proxy:", err);
       }
     };
     syncSeo();
