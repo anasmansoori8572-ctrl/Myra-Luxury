@@ -1,5 +1,6 @@
 import React from "react";
 import { motion, AnimatePresence } from "motion/react";
+import { getVersionedCloudinaryUrl } from "../cloudinary";
 
 interface ProductVisualProps {
   id: string;
@@ -24,7 +25,7 @@ export const CoreProductVisual: React.FC<ProductVisualProps> = ({ id = "", image
         {/* Soft elegant shadow behind image */}
         <div className="absolute inset-0 bg-gradient-to-tr from-[#C68B59]/5 to-transparent opacity-20 pointer-events-none" />
         <img 
-          src={targetId} 
+          src={getVersionedCloudinaryUrl(targetId)} 
           alt="Luxury Creation" 
           className="max-w-[98%] max-h-[98%] object-contain rounded-xl drop-shadow-xl scale-[1.28] hover:scale-[1.35] transition-all duration-500 ease-out"
           referrerPolicy="no-referrer"

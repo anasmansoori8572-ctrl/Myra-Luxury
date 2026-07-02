@@ -7,6 +7,9 @@ import { CartDrawer } from "./components/CartDrawer";
 import { ProfileModal } from "./components/ProfileModal";
 import { AdminPortal } from "./components/AdminPortal";
 import { useAuth } from "./lib/authContext";
+import { db } from "./lib/firebase";
+import { collection, doc, getDocs, getDoc, setDoc, deleteDoc } from "firebase/firestore";
+import { getVersionedCloudinaryUrl } from "./cloudinary";
 import { 
   Search, 
   ShoppingBag, 
@@ -419,6 +422,86 @@ export default function App() {
     }
   }, [profile, user]);
 
+  // --- Firestore Integration Synchronization Engine ---
+  const [isFirestoreLoaded, setIsFirestoreLoaded] = useState<boolean>(false);
+
+  // Load all persistent data from Firestore on app startup
+  useEffect(() => {
+    const loadAllFromFirestore = async () => {
+      try {
+        console.log("[Firestore Sync]: Fetching boutique collections from Cloud DB...");
+        // 1. Fetch Products
+        const prodSnap = await getDocs(collection(db, "products"));
+        if (!prodSnap.empty) {
+          const list = prodSnap.docs.map(doc => doc.data() as Product);
+          setDbProducts(list);
+          localStorage.setItem("myra_products", JSON.stringify(list));
+        }
+
+        // 2. Fetch Locations
+        const locSnap = await getDocs(collection(db, "locations"));
+        if (!locSnap.empty) {
+          const list = locSnap.docs.map(doc => doc.data() as StoreLocation);
+          setDbLocations(list);
+          localStorage.setItem("myra_locations", JSON.stringify(list));
+        }
+
+        // 3. Fetch Branding Configurations
+        const brandingSnap = await getDoc(doc(db, "configs", "branding"));
+        if (brandingSnap.exists()) {
+          const data = brandingSnap.data();
+          if (data.videoUrl) {
+            setVideoUrl(data.videoUrl);
+            localStorage.setItem("myra_video_url", data.videoUrl);
+          }
+          if (data.heroBgUrl) {
+            setHeroBgUrl(data.heroBgUrl);
+            localStorage.setItem("myra_hero_bg_url", data.heroBgUrl);
+          }
+          if (data.logoUrl) {
+            setLogoUrl(data.logoUrl);
+            localStorage.setItem("myra_logo_url", data.logoUrl);
+          }
+          if (data.companyName) {
+            setCompanyName(data.companyName);
+            localStorage.setItem("myra_company_name", data.companyName);
+          }
+          if (data.companySubtitle) {
+            setCompanySubtitle(data.companySubtitle);
+            localStorage.setItem("myra_company_subtitle", data.companySubtitle);
+          }
+          if (data.bannerUrl) {
+            setBannerUrl(data.bannerUrl);
+            localStorage.setItem("myra_banner_url", data.bannerUrl);
+          }
+        }
+
+        // 4. Fetch SEO configurations
+        const seoSnap = await getDoc(doc(db, "configs", "seo"));
+        if (seoSnap.exists()) {
+          const data = seoSnap.data() as SEOMetadata;
+          setSeoData(data);
+          localStorage.setItem("myra_seo_data", JSON.stringify(data));
+        }
+
+        // 5. Fetch Messages
+        const msgSnap = await getDocs(collection(db, "messages"));
+        if (!msgSnap.empty) {
+          const list = msgSnap.docs.map(doc => doc.data() as ContactMessage);
+          list.sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+          setMessages(list);
+          localStorage.setItem("myra_messages", JSON.stringify(list));
+        }
+      } catch (err) {
+        console.error("[Firestore Sync Error]: Failed to populate boutique states on boot, using offline cache fallback.", err);
+      } finally {
+        setIsFirestoreLoaded(true);
+      }
+    };
+
+    loadAllFromFirestore();
+  }, []);
+
   // Persist wishlist changes
   useEffect(() => {
     safeSetLocalStorage("myra_wishlist", JSON.stringify(wishlist));
@@ -428,55 +511,138 @@ export default function App() {
     safeSetLocalStorage("myra_cart", JSON.stringify(cart));
   }, [cart]);
 
-  // Persist and synchronize dbProducts
+  // Synchronize dbProducts changes to Firestore
   useEffect(() => {
     safeSetLocalStorage("myra_products", JSON.stringify(dbProducts));
-  }, [dbProducts]);
+    
+    if (!isFirestoreLoaded) return;
+    
+    const syncProducts = async () => {
+      try {
+        console.log("[Firestore Sync]: Writing updated products catalog to cloud database...");
+        for (const p of dbProducts) {
+          await setDoc(doc(db, "products", p.id), p);
+        }
+        // Safely prune deleted products
+        const currentSnap = await getDocs(collection(db, "products"));
+        const updatedIds = dbProducts.map(p => p.id);
+        for (const docObj of currentSnap.docs) {
+          if (!updatedIds.includes(docObj.id)) {
+            await deleteDoc(doc(db, "products", docObj.id));
+          }
+        }
+      } catch (err) {
+        console.error("Failed to sync products to Firestore:", err);
+      }
+    };
+    syncProducts();
+  }, [dbProducts, isFirestoreLoaded]);
 
-  // Persist and synchronize orders
+  // Synchronize orders changes locally
   useEffect(() => {
     safeSetLocalStorage("myra_orders", JSON.stringify(orders));
   }, [orders]);
 
-  // Persist and synchronize messages
+  // Synchronize support messages to Firestore
   useEffect(() => {
     safeSetLocalStorage("myra_messages", JSON.stringify(messages));
-  }, [messages]);
 
-  // Persist and synchronize locations
+    if (!isFirestoreLoaded) return;
+
+    const syncMessages = async () => {
+      try {
+        console.log("[Firestore Sync]: Writing updated support messages to cloud database...");
+        for (const m of messages) {
+          await setDoc(doc(db, "messages", m.id), m);
+        }
+        // Safely prune deleted messages
+        const currentSnap = await getDocs(collection(db, "messages"));
+        const updatedIds = messages.map(m => m.id);
+        for (const docObj of currentSnap.docs) {
+          if (!updatedIds.includes(docObj.id)) {
+            await deleteDoc(doc(db, "messages", docObj.id));
+          }
+        }
+      } catch (err) {
+        console.error("Failed to sync support messages to Firestore:", err);
+      }
+    };
+    syncMessages();
+  }, [messages, isFirestoreLoaded]);
+
+  // Synchronize locations changes to Firestore
   useEffect(() => {
     safeSetLocalStorage("myra_locations", JSON.stringify(dbLocations));
-  }, [dbLocations]);
 
-  // Persist brand presentation video URL
+    if (!isFirestoreLoaded) return;
+
+    const syncLocations = async () => {
+      try {
+        console.log("[Firestore Sync]: Writing updated boutique locations to cloud database...");
+        for (const l of dbLocations) {
+          await setDoc(doc(db, "locations", l.id), l);
+        }
+        // Safely prune deleted locations
+        const currentSnap = await getDocs(collection(db, "locations"));
+        const updatedIds = dbLocations.map(l => l.id);
+        for (const docObj of currentSnap.docs) {
+          if (!updatedIds.includes(docObj.id)) {
+            await deleteDoc(doc(db, "locations", docObj.id));
+          }
+        }
+      } catch (err) {
+        console.error("Failed to sync locations to Firestore:", err);
+      }
+    };
+    syncLocations();
+  }, [dbLocations, isFirestoreLoaded]);
+
+  // Synchronize branding presentation changes to Firestore
   useEffect(() => {
     safeSetLocalStorage("myra_video_url", videoUrl);
-  }, [videoUrl]);
-
-  // Persist brand background image
-  useEffect(() => {
     safeSetLocalStorage("myra_hero_bg_url", heroBgUrl);
-  }, [heroBgUrl]);
-
-  // Persist brand logo URL
-  useEffect(() => {
     safeSetLocalStorage("myra_logo_url", logoUrl);
-  }, [logoUrl]);
-
-  // Persist company name state
-  useEffect(() => {
     safeSetLocalStorage("myra_company_name", companyName);
-  }, [companyName]);
-
-  // Persist company subtitle state
-  useEffect(() => {
     safeSetLocalStorage("myra_company_subtitle", companySubtitle);
-  }, [companySubtitle]);
-
-  // Persist campaign banner image state
-  useEffect(() => {
     safeSetLocalStorage("myra_banner_url", bannerUrl);
-  }, [bannerUrl]);
+
+    if (!isFirestoreLoaded) return;
+
+    const syncBranding = async () => {
+      try {
+        console.log("[Firestore Sync]: Writing updated branding configuration to cloud database...");
+        await setDoc(doc(db, "configs", "branding"), {
+          videoUrl,
+          heroBgUrl,
+          logoUrl,
+          companyName,
+          companySubtitle,
+          bannerUrl,
+          updatedAt: new Date().toISOString()
+        });
+      } catch (err) {
+        console.error("Failed to sync branding configurations to Firestore:", err);
+      }
+    };
+    syncBranding();
+  }, [videoUrl, heroBgUrl, logoUrl, companyName, companySubtitle, bannerUrl, isFirestoreLoaded]);
+
+  // Synchronize SEO changes to Firestore
+  useEffect(() => {
+    safeSetLocalStorage("myra_seo_data", JSON.stringify(seoData));
+
+    if (!isFirestoreLoaded) return;
+
+    const syncSeo = async () => {
+      try {
+        console.log("[Firestore Sync]: Writing updated SEO configurations to cloud database...");
+        await setDoc(doc(db, "configs", "seo"), seoData);
+      } catch (err) {
+        console.error("Failed to sync SEO configurations to Firestore:", err);
+      }
+    };
+    syncSeo();
+  }, [seoData, isFirestoreLoaded]);
 
   // Listen to external product/order updates (e.g. from checkout in CartDrawer or other places)
   useEffect(() => {
@@ -787,7 +953,7 @@ export default function App() {
           className="absolute top-0 left-0 right-0 z-0 pointer-events-none"
           style={{
             height: `${heroBottom}px`,
-            backgroundImage: `linear-gradient(rgba(253, 251, 247, 0.65), rgba(253, 251, 247, 0.65)), url("${heroBgUrl}")`,
+            backgroundImage: `linear-gradient(rgba(253, 251, 247, 0.65), rgba(253, 251, 247, 0.65)), url("${getVersionedCloudinaryUrl(heroBgUrl)}")`,
             backgroundSize: 'cover',
             backgroundPosition: 'center',
             backgroundRepeat: 'no-repeat'
@@ -811,7 +977,7 @@ export default function App() {
           <a href="#home" className="flex items-center gap-2 group focus:outline-none">
             <div className="w-8 h-8 rounded-full overflow-hidden flex items-center justify-center shadow-md border border-stone-200/40 bg-white transition-transform duration-500 group-hover:scale-105">
               <img 
-                src={logoUrl} 
+                src={getVersionedCloudinaryUrl(logoUrl)} 
                 alt={`${companyName} Logo`} 
                 className="w-full h-full object-cover rounded-full" 
                 referrerPolicy="no-referrer"
@@ -1199,7 +1365,7 @@ export default function App() {
             <div className="absolute bottom-6 right-12 z-20 bg-[#2C2C2C] text-white rounded-2xl p-3 shadow-xl border border-white/10 max-w-[100px] text-center hidden sm:block">
               <div className="w-6 h-6 rounded-full overflow-hidden mx-auto bg-white border border-[#D4AF37]/40 shadow-inner p-0.5 mb-1 animate-pulse">
                 <img 
-                  src={logoUrl} 
+                  src={getVersionedCloudinaryUrl(logoUrl)} 
                   alt={`${companyName} Logo`} 
                   className="w-full h-full object-cover rounded-full" 
                   referrerPolicy="no-referrer"
@@ -1220,7 +1386,7 @@ export default function App() {
             <span key={i} className="flex items-center gap-4 text-stone-100">
               <div className="w-5 h-5 rounded-full overflow-hidden bg-white border border-[#D4AF37]/50 p-0.5 shrink-0 flex items-center justify-center">
                 <img 
-                  src={logoUrl} 
+                  src={getVersionedCloudinaryUrl(logoUrl)} 
                   alt="" 
                   className="w-full h-full object-cover rounded-full" 
                   referrerPolicy="no-referrer"
@@ -1774,7 +1940,7 @@ export default function App() {
             style={{ animationDuration: "12s" }}
           >
             <img 
-              src={logoUrl} 
+              src={getVersionedCloudinaryUrl(logoUrl)} 
               alt={`${companyName} Logo`} 
               className="w-full h-full object-cover rounded-full" 
               referrerPolicy="no-referrer"
@@ -1896,7 +2062,7 @@ export default function App() {
           {/* Dynamic automatic-aspect responsive banner image */}
           <div className="w-full h-auto overflow-hidden relative">
             <img 
-              src={bannerUrl} 
+              src={getVersionedCloudinaryUrl(bannerUrl)} 
               alt="Campaign Banner"
               className="w-full h-auto object-contain block filter brightness-[1.01] contrast-[1.02] transition-transform duration-700 luxury-banner-pulse"
               referrerPolicy="no-referrer"
@@ -2771,7 +2937,7 @@ export default function App() {
             <a href="#home" className="flex items-center gap-2">
               <div className="w-8 h-8 rounded-full overflow-hidden flex items-center justify-center bg-white border border-white/20 shadow-md">
                 <img 
-                  src={logoUrl} 
+                  src={getVersionedCloudinaryUrl(logoUrl)} 
                   alt={`${companyName} Logo`} 
                   className="w-full h-full object-cover rounded-full" 
                   referrerPolicy="no-referrer"

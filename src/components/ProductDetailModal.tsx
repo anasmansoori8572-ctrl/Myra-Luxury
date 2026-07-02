@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { Product, SizeVariant, Review } from "../types";
 import { ProductVisual } from "./ProductVisual";
+import { getVersionedCloudinaryUrl } from "../cloudinary";
 import { X, Sparkles, Star, Tag, ShoppingBag, ShieldCheck, Milestone, Heart, Camera, ArrowUpDown, Check, User, Trash2 } from "lucide-react";
 import { WriteReviewModal } from "./WriteReviewModal";
 
@@ -657,7 +658,7 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                     className="w-16 h-16 rounded-xl border border-stone-200 overflow-hidden shadow-sm relative group cursor-zoom-in transition-all duration-300 hover:scale-110 hover:shadow-md"
                   >
                     <img 
-                      src={photo.imageUrl} 
+                      src={getVersionedCloudinaryUrl(photo.imageUrl)} 
                       alt={`Customer review by ${photo.author}`} 
                       className="w-full h-full object-cover"
                     />
@@ -816,7 +817,7 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
           <div className="relative max-w-2xl max-h-[85vh] overflow-hidden rounded-2xl bg-white shadow-2xl border border-stone-805 flex flex-col z-20 animate-in zoom-in-95 duration-200">
             <div className="p-1 max-h-[70vh] overflow-hidden flex items-center justify-center bg-stone-900">
               <img 
-                src={activeZoomImage} 
+                src={getVersionedCloudinaryUrl(activeZoomImage)} 
                 className="max-w-full max-h-[70vh] object-contain rounded-t-xl" 
                 alt="Bespoke Customer Zoom View" 
               />

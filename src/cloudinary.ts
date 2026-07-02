@@ -135,3 +135,35 @@ export async function uploadToCloudinary(
     return await convertToBase64(file);
   }
 }
+
+// Stable session timestamp used to cache-bust Cloudinary resources on application reload/re-fetch.
+// This prevents browser caching from serving stale versions, while avoiding a dynamic 
+// Date.now() on every render frame which would cause performance bottlenecks and image flickering.
+const SESSION_TIMESTAMP = Date.now();
+
+/**
+ * Appends a versioning query parameter (e.g., ?v=TIMESTAMP) to all product image URLs,
+ * branding resources, and static assets loaded from Cloudinary.
+ */
+export function getVersionedCloudinaryUrl(url: string | undefined | null): string {
+  if (!url) return "";
+  
+  const isCloudinary = url.includes("cloudinary.com");
+  const isStaticAsset = url.startsWith("/") && !url.startsWith("data:");
+  
+  if (isCloudinary || isStaticAsset) {
+    try {
+      const separator = url.includes("?") ? "&" : "?";
+      // Skip if it already contains a version query parameter
+      if (url.includes("?v=") || url.includes("&v=")) {
+        return url;
+      }
+      return `${url}${separator}v=${SESSION_TIMESTAMP}`;
+    } catch {
+      return url;
+    }
+  }
+  
+  return url;
+}
+
