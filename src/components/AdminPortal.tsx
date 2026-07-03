@@ -3,6 +3,8 @@ import { Product, SizeVariant, FragranceNotes, CartItem, ContactMessage, StoreLo
 import { getPreseededReviews } from "./ProductDetailModal";
 import { MediaSettingsTab } from "./MediaSettingsTab";
 import { uploadToCloudinary } from "../cloudinary";
+import { db } from "../lib/firebase";
+import { collection, doc, setDoc, getDocs, getDoc, deleteDoc } from "firebase/firestore";
 import { 
   X, 
   Trash2, 
@@ -202,10 +204,19 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
       if (response.ok) {
         const data = await response.json();
         setAdminShipments(data.shipments || []);
+      } else {
+        throw new Error("Proxy shipments fetch failed");
       }
     } catch (err) {
-      console.error("Failed to fetch shipments for admin:", err);
-      triggerToast("Failed to fetch Delhivery shipments.", true);
+      console.warn("[Firestore Admin Fallback]: Fetching shipments directly via Client SDK...", err);
+      try {
+        const snap = await getDocs(collection(db, "shipments"));
+        const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        setAdminShipments(list);
+      } catch (fallbackErr) {
+        console.error("Direct client shipments fetch failed too:", fallbackErr);
+        triggerToast("Failed to fetch Delhivery shipments.", true);
+      }
     } finally {
       setIsLoadingShipments(false);
     }
@@ -217,10 +228,48 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
       const response = await fetch("/api/shipping/settings");
       if (response.ok) {
         const data = await response.json();
-        setAdminShippingSettings(data.settings);
+        const settings = data.settings || {};
+        setAdminShippingSettings({
+          warehouseOriginPincode: settings.warehouseOriginPincode || settings.originPin || "400001",
+          warehouseName: settings.warehouseName || "MYRA Central Atelier",
+          warehouseAddress: settings.warehouseAddress || "Boutique Block, Apollo Bandar, Colaba",
+          warehouseCity: settings.warehouseCity || "Mumbai",
+          warehouseState: settings.warehouseState || "Maharashtra",
+          warehouseMobile: settings.warehouseMobile || "9876543210",
+          freeShippingThreshold: typeof settings.freeShippingThreshold === 'number' ? settings.freeShippingThreshold : 999,
+          extraWeightKgRate: typeof settings.extraWeightKgRate === 'number' ? settings.extraWeightKgRate : 150,
+          codPaymentFee: typeof settings.codPaymentFee === 'number' ? settings.codPaymentFee : (typeof settings.baseCodCharge === 'number' ? settings.baseCodCharge : 50),
+          markupPercentage: typeof settings.markupPercentage === 'number' ? settings.markupPercentage : 0,
+          enablePromoFreeShipping: settings.enablePromoFreeShipping !== undefined ? settings.enablePromoFreeShipping : true,
+          isProductionMode: settings.isProductionMode !== undefined ? settings.isProductionMode : false
+        });
+      } else {
+        throw new Error("Proxy shipping settings fetch failed");
       }
     } catch (err) {
-      console.error("Failed to fetch shipping settings:", err);
+      console.warn("[Firestore Admin Fallback]: Fetching shipping settings directly via Client SDK...", err);
+      try {
+        const docSnap = await getDoc(doc(db, "shippingSettings", "settings"));
+        if (docSnap.exists()) {
+          const settings = docSnap.data();
+          setAdminShippingSettings({
+            warehouseOriginPincode: settings.warehouseOriginPincode || settings.originPin || "400001",
+            warehouseName: settings.warehouseName || "MYRA Central Atelier",
+            warehouseAddress: settings.warehouseAddress || "Boutique Block, Apollo Bandar, Colaba",
+            warehouseCity: settings.warehouseCity || "Mumbai",
+            warehouseState: settings.warehouseState || "Maharashtra",
+            warehouseMobile: settings.warehouseMobile || "9876543210",
+            freeShippingThreshold: typeof settings.freeShippingThreshold === 'number' ? settings.freeShippingThreshold : 999,
+            extraWeightKgRate: typeof settings.extraWeightKgRate === 'number' ? settings.extraWeightKgRate : 150,
+            codPaymentFee: typeof settings.codPaymentFee === 'number' ? settings.codPaymentFee : (typeof settings.baseCodCharge === 'number' ? settings.baseCodCharge : 50),
+            markupPercentage: typeof settings.markupPercentage === 'number' ? settings.markupPercentage : 0,
+            enablePromoFreeShipping: settings.enablePromoFreeShipping !== undefined ? settings.enablePromoFreeShipping : true,
+            isProductionMode: settings.isProductionMode !== undefined ? settings.isProductionMode : false
+          });
+        }
+      } catch (fallbackErr) {
+        console.error("Direct client shipping settings fetch failed too:", fallbackErr);
+      }
     } finally {
       setIsLoadingSettings(false);
     }
@@ -229,22 +278,49 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
   const saveAdminShippingSettings = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoadingSettings(true);
+    const payload = {
+      ...adminShippingSettings,
+      originPin: adminShippingSettings.warehouseOriginPincode,
+      baseCodCharge: adminShippingSettings.codPaymentFee
+    };
     try {
       const response = await fetch("/api/shipping/settings", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ settings: adminShippingSettings })
+        body: JSON.stringify({ settings: payload })
       });
       if (response.ok) {
         const data = await response.json();
-        setAdminShippingSettings(data.settings);
+        const settings = data.settings || {};
+        setAdminShippingSettings({
+          warehouseOriginPincode: settings.warehouseOriginPincode || settings.originPin || "400001",
+          warehouseName: settings.warehouseName || "MYRA Central Atelier",
+          warehouseAddress: settings.warehouseAddress || "Boutique Block, Apollo Bandar, Colaba",
+          warehouseCity: settings.warehouseCity || "Mumbai",
+          warehouseState: settings.warehouseState || "Maharashtra",
+          warehouseMobile: settings.warehouseMobile || "9876543210",
+          freeShippingThreshold: typeof settings.freeShippingThreshold === 'number' ? settings.freeShippingThreshold : 999,
+          extraWeightKgRate: typeof settings.extraWeightKgRate === 'number' ? settings.extraWeightKgRate : 150,
+          codPaymentFee: typeof settings.codPaymentFee === 'number' ? settings.codPaymentFee : (typeof settings.baseCodCharge === 'number' ? settings.baseCodCharge : 50),
+          markupPercentage: typeof settings.markupPercentage === 'number' ? settings.markupPercentage : 0,
+          enablePromoFreeShipping: settings.enablePromoFreeShipping !== undefined ? settings.enablePromoFreeShipping : true,
+          isProductionMode: settings.isProductionMode !== undefined ? settings.isProductionMode : false
+        });
+        localStorage.setItem("myra_shipping_settings", JSON.stringify(payload));
         triggerToast("Delhivery business rules updated successfully.");
       } else {
-        triggerToast("Failed to save shipping settings.", true);
+        throw new Error("Proxy settings save failed");
       }
     } catch (err) {
-      console.error("Failed to save shipping settings:", err);
-      triggerToast("Error updating business rules database.", true);
+      console.warn("[Firestore Admin Fallback]: Saving shipping settings directly via Client SDK...", err);
+      try {
+        await setDoc(doc(db, "shippingSettings", "settings"), payload, { merge: true });
+        localStorage.setItem("myra_shipping_settings", JSON.stringify(payload));
+        triggerToast("Delhivery business rules updated successfully.");
+      } catch (fallbackErr) {
+        console.error("Direct client shipping settings save failed too:", fallbackErr);
+        triggerToast("Error updating business rules database.", true);
+      }
     } finally {
       setIsLoadingSettings(false);
     }
@@ -300,9 +376,18 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
       if (response.ok) {
         const data = await response.json();
         setPromoCodes(data);
+      } else {
+        throw new Error("Proxy fetch failed");
       }
     } catch (err) {
-      console.error("Failed to fetch promo codes:", err);
+      console.warn("[Firestore Admin Fallback]: Fetching promo codes directly via Client SDK...", err);
+      try {
+        const snap = await getDocs(collection(db, "promoCodes"));
+        const list = snap.docs.map(d => d.data() as PromoCode);
+        setPromoCodes(list);
+      } catch (fallbackErr) {
+        console.error("Direct client promo codes fetch failed too:", fallbackErr);
+      }
     } finally {
       setLoadingPromos(false);
     }
@@ -319,11 +404,29 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
         setPromoCodes(updatedPromos);
         triggerToast("Promo codes database successfully updated.");
       } else {
-        triggerToast("Failed to dynamically save promo code configuration.");
+        throw new Error("Proxy save promo-codes failed");
       }
     } catch (err) {
-      console.error("Failed to save promo codes:", err);
-      triggerToast("Error matching server sync nodes.");
+      console.warn("[Firestore Admin Fallback]: Saving promo codes directly via Client SDK...", err);
+      try {
+        for (const p of updatedPromos) {
+          await setDoc(doc(db, "promoCodes", p.code), p, { merge: true });
+        }
+        // Clean up deleted codes
+        const snap = await getDocs(collection(db, "promoCodes"));
+        const currentList = snap.docs.map(d => d.id);
+        const updatedCodes = updatedPromos.map(p => p.code);
+        for (const code of currentList) {
+          if (!updatedCodes.includes(code)) {
+            await deleteDoc(doc(db, "promoCodes", code));
+          }
+        }
+        setPromoCodes(updatedPromos);
+        triggerToast("Promo codes database successfully updated.");
+      } catch (fallbackErr) {
+        console.error("Direct client promo codes save failed too:", fallbackErr);
+        triggerToast("Error matching server sync nodes.");
+      }
     }
   };
 
@@ -995,12 +1098,12 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
   // --- Location Actions ---
   const handleOpenEditLoc = (loc: StoreLocation) => {
     setEditingLoc(loc);
-    setLocId(loc.id);
-    setLocName(loc.name);
-    setLocTagline(loc.tagline);
-    setLocAddress(loc.address);
-    setLocPhone(loc.phone);
-    setLocHours(loc.hours);
+    setLocId(loc.id || "");
+    setLocName(loc.name || "");
+    setLocTagline(loc.tagline || "");
+    setLocAddress(loc.address || "");
+    setLocPhone(loc.phone || "");
+    setLocHours(loc.hours || "");
     setLocCoordinates(loc.coordinatesPlaceholder || "M 32,32 L 48,16 L 64,32 L 48,48 Z");
     setLocMapEmbedUrl(loc.mapEmbedUrl || "");
     setLocFormMode("edit");
@@ -1920,7 +2023,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                                       <label className="text-[9px] font-bold uppercase tracking-wider text-stone-500 block">Bottle Size Label</label>
                                       <input
                                         type="text"
-                                        value={variant.size}
+                                        value={variant.size || ""}
                                         onChange={(e) => {
                                           const updated = [...customSizeVariants];
                                           updated[index].size = e.target.value;
@@ -1935,7 +2038,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                                       <label className="text-[9px] font-bold uppercase tracking-wider text-stone-500 block">Retail Price (₹)</label>
                                       <input
                                         type="number"
-                                        value={variant.price === 0 ? "" : variant.price}
+                                        value={variant.price === undefined || variant.price === null || variant.price === 0 ? "" : variant.price}
                                         onChange={(e) => {
                                           const updated = [...customSizeVariants];
                                           updated[index].price = Number(e.target.value);
@@ -1957,7 +2060,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                                       <label className="text-[9px] font-bold uppercase tracking-wider text-stone-500 block">Detailed Spec / Style Label</label>
                                       <input
                                         type="text"
-                                        value={variant.sizeOrSpec}
+                                        value={variant.sizeOrSpec || ""}
                                         onChange={(e) => {
                                           const updated = [...customSizeVariants];
                                           updated[index].sizeOrSpec = e.target.value;

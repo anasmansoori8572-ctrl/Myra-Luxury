@@ -8,7 +8,7 @@ import { ProfileModal } from "./components/ProfileModal";
 import { AdminPortal } from "./components/AdminPortal";
 import { useAuth } from "./lib/authContext";
 import { db } from "./lib/firebase";
-import { collection, doc, getDocs, getDoc, setDoc, deleteDoc } from "firebase/firestore";
+import { collection, doc, getDocs, getDoc, setDoc, deleteDoc, onSnapshot } from "firebase/firestore";
 import { getVersionedCloudinaryUrl } from "./cloudinary";
 import { 
   Search, 
@@ -40,6 +40,7 @@ import {
 
 export default function App() {
   const { user, profile, toggleWishlistItem } = useAuth();
+  const isLocalChange = useRef<boolean>(false);
 
   // --- Hero Section Adaptive Background Banner Measuring ---
   const heroRef = useRef<HTMLElement>(null);
@@ -431,75 +432,144 @@ export default function App() {
       try {
         console.log("[Firestore Sync]: Fetching boutique collections from Cloud DB via proxy...");
         // 1. Fetch Products
-        const prodRes = await fetch("/api/products");
-        if (prodRes.ok) {
-          const list = await prodRes.json();
-          if (Array.isArray(list) && list.length > 0) {
-            setDbProducts(list);
-            localStorage.setItem("myra_products", JSON.stringify(list));
+        let productsList: Product[] = [];
+        try {
+          const prodRes = await fetch("/api/products");
+          if (prodRes.ok) {
+            productsList = await prodRes.json();
+          } else {
+            throw new Error("Proxy products fetch failed");
           }
+        } catch (err) {
+          console.warn("[Firestore Sync Fallback]: Fetching products directly from Client SDK...", err);
+          try {
+            const snap = await getDocs(collection(db, "products"));
+            productsList = snap.docs.map(d => ({ id: d.id, ...d.data() })) as Product[];
+          } catch (fallbackErr) {
+            console.error("Direct client products fetch failed too:", fallbackErr);
+          }
+        }
+        if (Array.isArray(productsList) && productsList.length > 0) {
+          setDbProducts(productsList);
+          localStorage.setItem("myra_products", JSON.stringify(productsList));
         }
 
         // 2. Fetch Locations
-        const locRes = await fetch("/api/locations");
-        if (locRes.ok) {
-          const list = await locRes.json();
-          if (Array.isArray(list) && list.length > 0) {
-            setDbLocations(list);
-            localStorage.setItem("myra_locations", JSON.stringify(list));
+        let locationsList: StoreLocation[] = [];
+        try {
+          const locRes = await fetch("/api/locations");
+          if (locRes.ok) {
+            locationsList = await locRes.json();
+          } else {
+            throw new Error("Proxy locations fetch failed");
           }
+        } catch (err) {
+          console.warn("[Firestore Sync Fallback]: Fetching locations directly from Client SDK...", err);
+          try {
+            const snap = await getDocs(collection(db, "locations"));
+            locationsList = snap.docs.map(d => ({ id: d.id, ...d.data() })) as StoreLocation[];
+          } catch (fallbackErr) {
+            console.error("Direct client locations fetch failed too:", fallbackErr);
+          }
+        }
+        if (Array.isArray(locationsList) && locationsList.length > 0) {
+          setDbLocations(locationsList);
+          localStorage.setItem("myra_locations", JSON.stringify(locationsList));
         }
 
         // 3. Fetch Branding Configurations
-        const brandingRes = await fetch("/api/configs/branding");
-        if (brandingRes.ok) {
-          const data = await brandingRes.json();
-          if (data && Object.keys(data).length > 0) {
-            if (data.videoUrl) {
-              setVideoUrl(data.videoUrl);
-              localStorage.setItem("myra_video_url", data.videoUrl);
+        let brandingData: any = null;
+        try {
+          const brandingRes = await fetch("/api/configs/branding");
+          if (brandingRes.ok) {
+            brandingData = await brandingRes.json();
+          } else {
+            throw new Error("Proxy branding fetch failed");
+          }
+        } catch (err) {
+          console.warn("[Firestore Sync Fallback]: Fetching branding directly from Client SDK...", err);
+          try {
+            const docSnap = await getDoc(doc(db, "configs", "branding"));
+            if (docSnap.exists()) {
+              brandingData = docSnap.data();
             }
-            if (data.heroBgUrl) {
-              setHeroBgUrl(data.heroBgUrl);
-              localStorage.setItem("myra_hero_bg_url", data.heroBgUrl);
-            }
-            if (data.logoUrl) {
-              setLogoUrl(data.logoUrl);
-              localStorage.setItem("myra_logo_url", data.logoUrl);
-            }
-            if (data.companyName) {
-              setCompanyName(data.companyName);
-              localStorage.setItem("myra_company_name", data.companyName);
-            }
-            if (data.companySubtitle) {
-              setCompanySubtitle(data.companySubtitle);
-              localStorage.setItem("myra_company_subtitle", data.companySubtitle);
-            }
-            if (data.bannerUrl) {
-              setBannerUrl(data.bannerUrl);
-              localStorage.setItem("myra_banner_url", data.bannerUrl);
-            }
+          } catch (fallbackErr) {
+            console.error("Direct client branding fetch failed too:", fallbackErr);
+          }
+        }
+        if (brandingData && Object.keys(brandingData).length > 0) {
+          if (brandingData.videoUrl) {
+            setVideoUrl(brandingData.videoUrl);
+            localStorage.setItem("myra_video_url", brandingData.videoUrl);
+          }
+          if (brandingData.heroBgUrl) {
+            setHeroBgUrl(brandingData.heroBgUrl);
+            localStorage.setItem("myra_hero_bg_url", brandingData.heroBgUrl);
+          }
+          if (brandingData.logoUrl) {
+            setLogoUrl(brandingData.logoUrl);
+            localStorage.setItem("myra_logo_url", brandingData.logoUrl);
+          }
+          if (brandingData.companyName) {
+            setCompanyName(brandingData.companyName);
+            localStorage.setItem("myra_company_name", brandingData.companyName);
+          }
+          if (brandingData.companySubtitle) {
+            setCompanySubtitle(brandingData.companySubtitle);
+            localStorage.setItem("myra_company_subtitle", brandingData.companySubtitle);
+          }
+          if (brandingData.bannerUrl) {
+            setBannerUrl(brandingData.bannerUrl);
+            localStorage.setItem("myra_banner_url", brandingData.bannerUrl);
           }
         }
 
         // 4. Fetch SEO configurations
-        const seoRes = await fetch("/api/configs/seo");
-        if (seoRes.ok) {
-          const data = await seoRes.json();
-          if (data && Object.keys(data).length > 0) {
-            setSeoData(data);
-            localStorage.setItem("myra_seo_data", JSON.stringify(data));
+        let seoDataFetched: any = null;
+        try {
+          const seoRes = await fetch("/api/configs/seo");
+          if (seoRes.ok) {
+            seoDataFetched = await seoRes.json();
+          } else {
+            throw new Error("Proxy seo fetch failed");
           }
+        } catch (err) {
+          console.warn("[Firestore Sync Fallback]: Fetching SEO directly from Client SDK...", err);
+          try {
+            const docSnap = await getDoc(doc(db, "configs", "seo"));
+            if (docSnap.exists()) {
+              seoDataFetched = docSnap.data();
+            }
+          } catch (fallbackErr) {
+            console.error("Direct client SEO fetch failed too:", fallbackErr);
+          }
+        }
+        if (seoDataFetched && Object.keys(seoDataFetched).length > 0) {
+          setSeoData(seoDataFetched);
+          localStorage.setItem("myra_seo_data", JSON.stringify(seoDataFetched));
         }
 
         // 5. Fetch Messages
-        const msgRes = await fetch("/api/messages");
-        if (msgRes.ok) {
-          const list = await msgRes.json();
-          if (Array.isArray(list) && list.length > 0) {
-            setMessages(list);
-            localStorage.setItem("myra_messages", JSON.stringify(list));
+        let messagesList: ContactMessage[] = [];
+        try {
+          const msgRes = await fetch("/api/messages");
+          if (msgRes.ok) {
+            messagesList = await msgRes.json();
+          } else {
+            throw new Error("Proxy messages fetch failed");
           }
+        } catch (err) {
+          console.warn("[Firestore Sync Fallback]: Fetching messages directly from Client SDK...", err);
+          try {
+            const snap = await getDocs(collection(db, "messages"));
+            messagesList = snap.docs.map(d => ({ id: d.id, ...d.data() })) as ContactMessage[];
+          } catch (fallbackErr) {
+            console.error("Direct client messages fetch failed too:", fallbackErr);
+          }
+        }
+        if (Array.isArray(messagesList) && messagesList.length > 0) {
+          setMessages(messagesList);
+          localStorage.setItem("myra_messages", JSON.stringify(messagesList));
         }
       } catch (err) {
         console.error("[Firestore Sync Error]: Failed to populate boutique states on boot, using offline cache fallback.", err);
@@ -525,6 +595,10 @@ export default function App() {
     safeSetLocalStorage("myra_products", JSON.stringify(dbProducts));
     
     if (!isFirestoreLoaded) return;
+    if (!isLocalChange.current) return;
+    
+    // Reset the flag
+    isLocalChange.current = false;
     
     const syncProducts = async () => {
       try {
@@ -536,11 +610,52 @@ export default function App() {
         });
         if (!res.ok) throw new Error(await res.text());
       } catch (err) {
-        console.error("Failed to sync products via proxy:", err);
+        console.warn("[Firestore Sync Fallback]: Syncing products directly via Client SDK...", err);
+        try {
+          for (const p of dbProducts) {
+            await setDoc(doc(db, "products", p.id), p, { merge: true });
+          }
+          const snap = await getDocs(collection(db, "products"));
+          const currentList = snap.docs.map(d => ({ id: d.id }));
+          const updatedIds = dbProducts.map((p: any) => p.id);
+          for (const docObj of currentList) {
+            if (!updatedIds.includes(docObj.id)) {
+              await deleteDoc(doc(db, "products", docObj.id));
+            }
+          }
+        } catch (fallbackErr) {
+          console.error("Direct client products sync failed too:", fallbackErr);
+        }
       }
     };
     syncProducts();
   }, [dbProducts, isFirestoreLoaded]);
+
+  // Real-time products listener to update other active users' clients
+  useEffect(() => {
+    if (!isFirestoreLoaded) return;
+
+    console.log("[Firestore Sync]: Setting up real-time products listener...");
+    const unsubscribe = onSnapshot(collection(db, "products"), (snapshot) => {
+      const productsList = snapshot.docs.map(d => ({ id: d.id, ...d.data() })) as Product[];
+      if (productsList.length > 0) {
+        setDbProducts((prevProducts) => {
+          const prevJson = JSON.stringify(prevProducts);
+          const nextJson = JSON.stringify(productsList);
+          if (prevJson !== nextJson) {
+            console.log("[Firestore Sync]: Real-time product inventory updated from Firestore.");
+            localStorage.setItem("myra_products", nextJson);
+            return productsList;
+          }
+          return prevProducts;
+        });
+      }
+    }, (error) => {
+      console.error("Real-time products snapshot failed:", error);
+    });
+
+    return () => unsubscribe();
+  }, [isFirestoreLoaded]);
 
   // Synchronize orders changes locally
   useEffect(() => {
@@ -563,7 +678,14 @@ export default function App() {
         });
         if (!res.ok) throw new Error(await res.text());
       } catch (err) {
-        console.error("Failed to sync support messages via proxy:", err);
+        console.warn("[Firestore Sync Fallback]: Syncing messages directly via Client SDK...", err);
+        try {
+          for (const m of messages) {
+            await setDoc(doc(db, "messages", m.id || `msg-${Date.now()}`), m, { merge: true });
+          }
+        } catch (fallbackErr) {
+          console.error("Direct client messages sync failed too:", fallbackErr);
+        }
       }
     };
     syncMessages();
@@ -585,7 +707,22 @@ export default function App() {
         });
         if (!res.ok) throw new Error(await res.text());
       } catch (err) {
-        console.error("Failed to sync locations via proxy:", err);
+        console.warn("[Firestore Sync Fallback]: Syncing locations directly via Client SDK...", err);
+        try {
+          for (const l of dbLocations) {
+            await setDoc(doc(db, "locations", l.id), l, { merge: true });
+          }
+          const snap = await getDocs(collection(db, "locations"));
+          const currentList = snap.docs.map(d => ({ id: d.id }));
+          const updatedIds = dbLocations.map((l: any) => l.id);
+          for (const docObj of currentList) {
+            if (!updatedIds.includes(docObj.id)) {
+              await deleteDoc(doc(db, "locations", docObj.id));
+            }
+          }
+        } catch (fallbackErr) {
+          console.error("Direct client locations sync failed too:", fallbackErr);
+        }
       }
     };
     syncLocations();
@@ -620,7 +757,20 @@ export default function App() {
         });
         if (!res.ok) throw new Error(await res.text());
       } catch (err) {
-        console.error("Failed to sync branding configurations via proxy:", err);
+        console.warn("[Firestore Sync Fallback]: Syncing branding directly via Client SDK...", err);
+        try {
+          await setDoc(doc(db, "configs", "branding"), {
+            videoUrl,
+            heroBgUrl,
+            logoUrl,
+            companyName,
+            companySubtitle,
+            bannerUrl,
+            updatedAt: new Date().toISOString()
+          }, { merge: true });
+        } catch (fallbackErr) {
+          console.error("Direct client branding sync failed too:", fallbackErr);
+        }
       }
     };
     syncBranding();
@@ -642,7 +792,12 @@ export default function App() {
         });
         if (!res.ok) throw new Error(await res.text());
       } catch (err) {
-        console.error("Failed to sync SEO configurations via proxy:", err);
+        console.warn("[Firestore Sync Fallback]: Syncing SEO directly via Client SDK...", err);
+        try {
+          await setDoc(doc(db, "configs", "seo"), seoData, { merge: true });
+        } catch (fallbackErr) {
+          console.error("Direct client SEO sync failed too:", fallbackErr);
+        }
       }
     };
     syncSeo();
@@ -688,9 +843,22 @@ export default function App() {
             localStorage.setItem("myra_orders", JSON.stringify(serverOrders));
             return;
           }
+        } else {
+          throw new Error("Proxy orders fetch failed");
         }
       } catch (err) {
-        console.warn("Optional Express database offline or unreachable; using browser local storage.");
+        console.warn("[Firestore Sync Fallback]: Fetching orders directly via Client SDK...", err);
+        try {
+          const snap = await getDocs(collection(db, "orders"));
+          const serverOrders = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+          if (serverOrders.length > 0) {
+            setOrders(serverOrders);
+            localStorage.setItem("myra_orders", JSON.stringify(serverOrders));
+            return;
+          }
+        } catch (fallbackErr) {
+          console.error("Direct client orders fetch failed too:", fallbackErr);
+        }
       }
 
       // Safe fallback to local storage
@@ -3109,6 +3277,7 @@ export default function App() {
           products={dbProducts}
           orders={orders}
           onProductsChange={(updatedProducts) => {
+            isLocalChange.current = true;
             setDbProducts(updatedProducts);
           }}
           onOrdersChange={(updatedOrders) => {

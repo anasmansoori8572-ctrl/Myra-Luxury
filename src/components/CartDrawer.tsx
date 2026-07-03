@@ -4,6 +4,8 @@ import { ProductVisual } from "./ProductVisual";
 import { X, ShoppingBag, Plus, Minus, Trash2, ArrowRight, ShieldCheck, Tag, Gift, ChevronLeft, MapPin, User, Mail, Phone, Home, Briefcase, Info, CreditCard, Check } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { useAuth } from "../lib/authContext";
+import { db } from "../lib/firebase";
+import { collection, doc, setDoc, getDocs, getDoc, deleteDoc } from "firebase/firestore";
 
 interface CartDrawerProps {
   isOpen: boolean;
@@ -51,15 +53,29 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
   // Sync and fetch dynamic promo codes when drawer visibility changes
   useEffect(() => {
     if (isOpen) {
-      // Fetch dynamic promo codes
-      fetch("/api/promo-codes")
-        .then(res => res.json())
-        .then(data => {
-          if (Array.isArray(data)) {
-            setDbPromoCodes(data);
+      const loadPromoCodes = async () => {
+        try {
+          const res = await fetch("/api/promo-codes");
+          if (res.ok) {
+            const data = await res.json();
+            if (Array.isArray(data)) {
+              setDbPromoCodes(data);
+              return;
+            }
           }
-        })
-        .catch(err => console.error("Error loading dynamic promo codes base:", err));
+          throw new Error("Proxy promo codes fetch failed");
+        } catch (err) {
+          console.warn("[Firestore Sync Fallback]: Fetching promo codes directly from Client SDK...", err);
+          try {
+            const snap = await getDocs(collection(db, "promoCodes"));
+            const data = snap.docs.map(d => d.data());
+            setDbPromoCodes(data);
+          } catch (fallbackErr) {
+            console.error("Direct client promo codes fetch failed too:", fallbackErr);
+          }
+        }
+      };
+      loadPromoCodes();
     }
   }, [isOpen]);
 
@@ -173,8 +189,160 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
       setDelhiveryShippingDetails(calcData);
       setPincodeValidatedVal(pinToVerify);
     } catch (err: any) {
-      setPincodeError(err.message || "Failed verifying pincode with Delhivery.");
-      setDelhiveryShippingDetails(null);
+      console.warn("[Delhivery Sync Fallback]: Server endpoints offline or failed. Performing client-side calculation...", err);
+      try {
+        const pinNum = pinToVerify.replace(/\D/g, "");
+        if (pinNum.length !== 6 || pinNum.startsWith("0")) {
+          throw new Error("Invalid Indian PIN code format. Must be 6 digits.");
+        }
+        
+        // Determine prefix and zone
+        const prefix = pinNum.charAt(0);
+        const isOda = pinNum.endsWith("9");
+        let city = "Mumbai";
+        let state = "Maharashtra";
+        let zone = "A";
+        let minDays = 1;
+        let maxDays = 2;
+        
+        switch (prefix) {
+          case "1": city = "New Delhi"; state = "Delhi"; zone = "C"; minDays = 3; maxDays = 5; break;
+          case "2": city = "Lucknow"; state = "Uttar Pradesh"; zone = "C"; minDays = 3; maxDays = 5; break;
+          case "3": city = "Jaipur"; state = "Rajasthan"; zone = "B"; minDays = 2; maxDays = 4; break;
+          case "4": 
+            if (pinNum.slice(0, 3) === "400") {
+              city = "Greater Mumbai"; state = "Maharashtra"; zone = "A"; minDays = 1; maxDays = 1;
+            } else {
+              city = "Pune"; state = "Maharashtra"; zone = "A"; minDays = 1; maxDays = 2;
+            }
+            break;
+          case "5": city = "Bengaluru"; state = "Karnataka"; zone = "B"; minDays = 2; maxDays = 4; break;
+          case "6": city = "Chennai"; state = "Tamil Nadu"; zone = "C"; minDays = 3; maxDays = 5; break;
+          case "7": city = "Guwahati"; state = "Assam"; zone = "D"; minDays = 5; maxDays = 8; break;
+          case "8": city = "Patna"; state = "Bihar"; zone = "C"; minDays = 4; maxDays = 6; break;
+          case "9": city = "Srinagar"; state = "Jammu & Kashmir"; zone = "D"; minDays = 5; maxDays = 7; break;
+          default: city = "Recipient City"; state = "Recipient State"; zone = "C"; minDays = 3; maxDays = 5;
+        }
+        
+        if (isOda) {
+          city = `${city} Rural (ODA)`;
+          minDays += 1;
+          maxDays += 2;
+        }
+
+        if (city && !shCity) setShCity(city);
+        if (state && !shState) setShState(state);
+
+        // Load custom shipping settings if any from localStorage (previously synced from DB)
+        let settings = {
+          originPin: "400001",
+          freeShippingThreshold: 999,
+          baseCodCharge: 50,
+          markupPercentage: 0,
+          enablePromoFreeShipping: true
+        };
+        try {
+          const savedSettings = localStorage.getItem("myra_shipping_settings");
+          if (savedSettings) {
+            const parsed = JSON.parse(savedSettings);
+            settings = { ...settings, ...parsed };
+          }
+        } catch {}
+
+        // Calculate consolidated measurements
+        let totalWeight = 0;
+        let maxLength = 0;
+        let maxWidth = 0;
+        let cumulativeHeight = 0;
+        let quantityTotal = 0;
+        
+        cartItems.forEach((it: any) => {
+          const p = it.product;
+          const q = Number(it.quantity || 1);
+          quantityTotal += q;
+          
+          const defaultWeight = p.weight || (p.category === "perfumes" ? 350 : p.category?.includes("leather") ? 180 : 160);
+          const defaultLen = p.length || (p.category === "perfumes" ? 10 : p.category?.includes("leather") ? 12 : 9);
+          const defaultWid = p.width || (p.category === "perfumes" ? 10 : p.category?.includes("leather") ? 12 : 6);
+          const defaultHt = p.height || (p.category === "perfumes" ? 16 : p.category?.includes("leather") ? 4 : 4);
+          
+          totalWeight += defaultWeight * q;
+          maxLength = Math.max(maxLength, defaultLen);
+          maxWidth = Math.max(maxWidth, defaultWid);
+          cumulativeHeight += defaultHt * q;
+        });
+
+        const volumetricWeight = (maxLength * maxWidth * cumulativeHeight) / 5000;
+        const actualWeightKg = totalWeight / 1000;
+        const chargeableWeightKg = Math.max(actualWeightKg, volumetricWeight);
+
+        let baseRate = 45;
+        let additionalHalfKgRate = 35;
+        
+        switch (zone) {
+          case "A": baseRate = 45; additionalHalfKgRate = 35; break;
+          case "B": baseRate = 65; additionalHalfKgRate = 45; break;
+          case "C": baseRate = 85; additionalHalfKgRate = 60; break;
+          case "D": baseRate = 120; additionalHalfKgRate = 85; break;
+        }
+
+        const halfKgSteps = Math.ceil(chargeableWeightKg / 0.5);
+        let calculatedShipFee = baseRate;
+        if (halfKgSteps > 1) {
+          calculatedShipFee += (halfKgSteps - 1) * additionalHalfKgRate;
+        }
+
+        if (isOda) {
+          calculatedShipFee += 80;
+        }
+
+        let codFeeValue = 0;
+        if (paymentMethodGroup === "cod") {
+          codFeeValue = settings.baseCodCharge || 50;
+        }
+
+        if (settings.markupPercentage > 0) {
+          calculatedShipFee = calculatedShipFee * (1 + settings.markupPercentage / 100);
+        }
+
+        const qualifiesForFreeShipping = settings.enablePromoFreeShipping && (subtotal >= settings.freeShippingThreshold);
+        const finalShippingCharged = qualifiesForFreeShipping ? 0 : Math.round(calculatedShipFee);
+        const grandInvoicedFreight = finalShippingCharged + codFeeValue;
+
+        const calcData = {
+          serviceable: true,
+          originPin: settings.originPin,
+          destPin: pinToVerify,
+          estimatedDays: `${minDays}-${maxDays}`,
+          courierName: "Delhivery Express Prime",
+          zone,
+          isOda,
+          metrics: {
+            totalQuantity: quantityTotal,
+            actualWeightGrams: totalWeight,
+            volumetricWeightKg: Number(volumetricWeight.toFixed(3)),
+            chargeableWeightKg: Number(chargeableWeightKg.toFixed(3)),
+            dimensions: { length: maxLength, width: maxWidth, height: cumulativeHeight }
+          },
+          pricingBreakdown: {
+            baseRate,
+            extraWeightCharge: calculatedShipFee - baseRate - (isOda ? 80 : 0),
+            odaSurcharge: isOda ? 80 : 0,
+            codPaymentFee: codFeeValue,
+            calculatedTotalRaw: calculatedShipFee + codFeeValue,
+            freeShippingCovered: qualifiesForFreeShipping,
+            shippingFeeInvoiced: finalShippingCharged + codFeeValue
+          },
+          grandInvoicedFreight
+        };
+
+        setDelhiveryShippingDetails(calcData);
+        setPincodeValidatedVal(pinToVerify);
+        setPincodeError("");
+      } catch (fallbackErr: any) {
+        setPincodeError(fallbackErr.message || "Failed verifying pincode with Delhivery.");
+        setDelhiveryShippingDetails(null);
+      }
     } finally {
       setIsCheckingPincode(false);
     }
@@ -194,9 +362,11 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
   const isFreeShipping = appliedDiscount?.type === "free_shipping";
   
   // Dynamic shipment cost mapping loaded from Delhivery Calculator API
-  const shippingCost = delhiveryShippingDetails 
-    ? delhiveryShippingDetails.grandInvoicedFreight 
-    : ((subtotal > 0 && !isFreeShipping) ? 15 : 0);
+  const shippingCost = isFreeShipping 
+    ? 0 
+    : (delhiveryShippingDetails 
+        ? delhiveryShippingDetails.grandInvoicedFreight 
+        : ((subtotal > 0) ? 80 : 0));
   
   // Applied discounts
   let discountValue = 0;
@@ -413,9 +583,37 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
         } catch (shipErr) {
           console.error("Failed to compile automatic Delhivery shipment dispatch:", shipErr);
         }
+      } else {
+        throw new Error("Express order submission proxy failed");
       }
     } catch (err) {
-      console.warn("Could not save order record to backend database. Synced locally instead.");
+      console.warn("[Firestore Orders Fallback]: Saving order directly via Client SDK...", err);
+      try {
+        await setDoc(doc(db, "orders", newOrder.id), newOrder, { merge: true });
+        
+        // Create a shipment locally and store in shipments collection if serviceable
+        if (delhiveryShippingDetails) {
+          const awb = `999${Math.floor(1000000000 + Math.random() * 9000000000)}`;
+          const shipment = {
+            id: awb,
+            awb,
+            orderId: newOrder.id,
+            status: "manifest_created",
+            clientName: `${firstName} ${lastName}`,
+            destination: `${shCity}, ${shState} - ${pinCode}`,
+            trackingLink: `/tracking?awb=${awb}`,
+            isSandbox: true,
+            createdAt: new Date().toISOString()
+          };
+          await setDoc(doc(db, "shipments", awb), shipment);
+          newOrder.awbNumber = awb;
+          newOrder.trackingLink = `/tracking?awb=${awb}`;
+          newOrder.shipmentStatus = "manifest_created";
+          newOrder.orderStatus = "Dispatched";
+        }
+      } catch (fallbackErr) {
+        console.error("Direct client-side order sync failed too:", fallbackErr);
+      }
     }
 
     // 2. Perform client fallback to keep state synchronized
@@ -1108,7 +1306,44 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                         </div>
 
                         {/* Proceed checkout block */}
-                        <div className="p-5 border-t border-stone-200 bg-white/95 shadow-lg flex flex-col gap-2 relative z-25">
+                        <div className="p-5 border-t border-stone-200 bg-white/95 shadow-lg flex flex-col gap-2.5 relative z-25">
+                          {/* Mini Bill Summary */}
+                          <div className="bg-stone-50 border border-stone-150 rounded-xl p-3 text-[11px] space-y-1 text-stone-600 font-sans">
+                            <div className="flex justify-between items-center">
+                              <span>Cart Subtotal</span>
+                              <span className="font-mono text-stone-905 font-semibold">₹{subtotal}</span>
+                            </div>
+                            {discountValue > 0 && (
+                              <div className="flex justify-between items-center text-emerald-700 font-semibold">
+                                <span>Promo Discount</span>
+                                <span className="font-mono">-₹{discountValue.toFixed(0)}</span>
+                              </div>
+                            )}
+                            <div className="flex justify-between items-center">
+                              <span className="flex items-center gap-1 text-stone-500">
+                                <span>Delhivery Shipping Charge</span>
+                                {delhiveryShippingDetails && (
+                                  <span className="text-[9px] bg-amber-50 text-amber-800 border border-amber-200 px-1 py-0.2 rounded font-mono font-bold">
+                                    Zone {delhiveryShippingDetails.zone}
+                                  </span>
+                                )}
+                              </span>
+                              <span className="font-mono text-stone-905 font-bold">
+                                {shippingCost === 0 ? "Free Shipping" : `₹${shippingCost}`}
+                              </span>
+                            </div>
+                            {paymentMethodGroup === "cod" && (
+                              <div className="flex justify-between items-center text-amber-800 font-semibold">
+                                <span>COD Surcharge</span>
+                                <span className="font-mono">₹{delhiveryShippingDetails?.pricingBreakdown?.codPaymentFee || 50}</span>
+                              </div>
+                            )}
+                            <div className="flex justify-between items-center border-t border-stone-200 pt-1.5 text-xs text-stone-900 font-bold font-serif">
+                              <span>Grand Total (Net to Pay)</span>
+                              <span className="font-mono text-[#8F633E] text-sm">₹{grandTotal.toFixed(0)}</span>
+                            </div>
+                          </div>
+
                           <button
                             type="button"
                             disabled={paymentMethodGroup === "cod" && !isCodAvailableForCart}
@@ -1128,7 +1363,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                               }
                               if (paymentMethodGroup === "card" && (cardNumber.replace(/\s/g, "").length < 16 || cardExpiry.length < 5 || cardCvv.length < 3)) {
                                 triggerToast("Card checklist: Ensure complete Card Number, Expiry, and CVV.");
-                                setRazorpayError("Credit Card parameters failed standard checksum.");
+                                  setRazorpayError("Credit Card parameters failed standard checksum.");
                                 return;
                               }
                               
