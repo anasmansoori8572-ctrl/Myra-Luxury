@@ -3248,6 +3248,7 @@ export default function App() {
         isWishlisted={activeDetailProduct ? isWishlisted(activeDetailProduct.id) : false}
         onToggleWishlist={activeDetailProduct ? () => toggleWishlist(activeDetailProduct.id) : undefined}
         onUpdateProduct={(updatedProd) => {
+          isLocalChange.current = true;
           setDbProducts(prev => prev.map(p => p.id === updatedProd.id ? updatedProd : p));
           setActiveDetailProduct(updatedProd);
         }}

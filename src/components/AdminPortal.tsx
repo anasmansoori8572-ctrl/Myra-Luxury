@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import { Product, SizeVariant, FragranceNotes, CartItem, ContactMessage, StoreLocation, Review, PromoCode, SEOMetadata } from "../types";
+import { products as seedProducts } from "../data";
 import { getPreseededReviews } from "./ProductDetailModal";
 import { MediaSettingsTab } from "./MediaSettingsTab";
 import { uploadToCloudinary } from "../cloudinary";
@@ -1087,8 +1088,11 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
       "WARNING: This will discard ALL custom added, edited, or deleted products and reset the boutique to original defaults. Continue?",
       () => {
         localStorage.removeItem("myra_products");
-        // Page reload will trigger default loading from data file
-        window.location.reload();
+        onProductsChange(seedProducts);
+        // Allow sync to complete, then reload to pull fresh synced data
+        setTimeout(() => {
+          window.location.reload();
+        }, 800);
       },
       "Reset Defaults",
       true
