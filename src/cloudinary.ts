@@ -96,12 +96,15 @@ export async function uploadToCloudinary(
   resourceType: "image" | "video" = "image"
 ): Promise<string> {
   try {
+    const cloudName = (import.meta as any).env.VITE_CLOUDINARY_CLOUD_NAME || "dy7avkqub";
+    const uploadPreset = (import.meta as any).env.VITE_CLOUDINARY_UPLOAD_PRESET || "ml_default";
+
     const formData = new FormData();
     formData.append("file", file);
-    formData.append("upload_preset", "ml_default");
+    formData.append("upload_preset", uploadPreset);
 
     const response = await fetch(
-      `https://api.cloudinary.com/v1_1/dy7avkqub/${resourceType}/upload`,
+      `https://api.cloudinary.com/v1_1/${cloudName}/${resourceType}/upload`,
       {
         method: "POST",
         body: formData,
@@ -121,6 +124,31 @@ export async function uploadToCloudinary(
       `[Cloudinary Fallback Active] The upload failed (${error.message || error}). ` +
       `Automatically falling back to a local high-fidelity Base64 Data URL so the application remains 100% active and editable.`
     );
+    
+    // Try to upload to our local server first to avoid giant Base64 strings in Firestore
+    if (resourceType === "image") {
+      try {
+        console.log("[Cloudinary Fallback]: Uploading compressed image to local server instead...");
+        const base64Data = await compressAndResizeImage(file, 800, 800, 0.7);
+        const uploadRes = await fetch("/api/upload", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            base64: base64Data,
+            filename: (file as any).name || "product_image"
+          })
+        });
+        if (uploadRes.ok) {
+          const uploadResult = await uploadRes.json();
+          if (uploadResult.url) {
+            console.log("[Cloudinary Fallback]: Successfully uploaded to local server:", uploadResult.url);
+            return uploadResult.url;
+          }
+        }
+      } catch (localUploadErr) {
+        console.error("Local server upload failed too, falling back to base64 inline:", localUploadErr);
+      }
+    }
     
     // Convert to local Base64 string with live compression if it is an image to fit with LocalStorage quotas
     if (resourceType === "image" && file.type && file.type.startsWith("image/")) {

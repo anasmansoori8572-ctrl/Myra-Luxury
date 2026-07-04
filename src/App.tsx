@@ -8,7 +8,7 @@ import { ProfileModal } from "./components/ProfileModal";
 import { AdminPortal } from "./components/AdminPortal";
 import { useAuth } from "./lib/authContext";
 import { db } from "./lib/firebase";
-import { collection, doc, getDocs, getDoc, setDoc, deleteDoc, onSnapshot } from "firebase/firestore";
+import { collection, doc, getDocs, getDoc, setDoc, deleteDoc, onSnapshot, writeBatch } from "firebase/firestore";
 import { getVersionedCloudinaryUrl } from "./cloudinary";
 import { 
   Search, 
@@ -597,9 +597,6 @@ export default function App() {
     if (!isFirestoreLoaded) return;
     if (!isLocalChange.current) return;
     
-    // Reset the flag
-    isLocalChange.current = false;
-    
     const syncProducts = async () => {
       try {
         console.log("[Firestore Sync]: Syncing products catalog via proxy API...");
@@ -609,23 +606,30 @@ export default function App() {
           body: JSON.stringify(dbProducts)
         });
         if (!res.ok) throw new Error(await res.text());
+        console.log("[Firestore Sync]: Products catalog atomically synced successfully!");
       } catch (err) {
         console.warn("[Firestore Sync Fallback]: Syncing products directly via Client SDK...", err);
         try {
+          const batch = writeBatch(db);
           for (const p of dbProducts) {
-            await setDoc(doc(db, "products", p.id), p, { merge: true });
+            batch.set(doc(db, "products", p.id), p, { merge: true });
           }
           const snap = await getDocs(collection(db, "products"));
           const currentList = snap.docs.map(d => ({ id: d.id }));
           const updatedIds = dbProducts.map((p: any) => p.id);
           for (const docObj of currentList) {
             if (!updatedIds.includes(docObj.id)) {
-              await deleteDoc(doc(db, "products", docObj.id));
+              batch.delete(doc(db, "products", docObj.id));
             }
           }
+          await batch.commit();
+          console.log("[Firestore Sync Fallback]: Atomic fallback sync succeeded.");
         } catch (fallbackErr) {
           console.error("Direct client products sync failed too:", fallbackErr);
         }
+      } finally {
+        // Reset the flag ONLY after the synchronization is fully complete
+        isLocalChange.current = false;
       }
     };
     syncProducts();
@@ -637,6 +641,13 @@ export default function App() {
 
     console.log("[Firestore Sync]: Setting up real-time products listener...");
     const unsubscribe = onSnapshot(collection(db, "products"), (snapshot) => {
+      // If a local change is currently syncing, ignore incoming snapshot updates
+      // to prevent racing/flickering/overwriting local uncommitted changes.
+      if (isLocalChange.current) {
+        console.log("[Firestore Sync]: Local change actively syncing, ignoring remote snapshot.");
+        return;
+      }
+
       const productsList = snapshot.docs.map(d => ({ id: d.id, ...d.data() })) as Product[];
       if (productsList.length > 0) {
         setDbProducts((prevProducts) => {

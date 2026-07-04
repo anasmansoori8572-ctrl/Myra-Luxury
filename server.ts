@@ -17,6 +17,7 @@ import {
   getDocs, 
   setDoc, 
   deleteDoc,
+  writeBatch,
   Firestore 
 } from "firebase/firestore";
 
@@ -31,6 +32,13 @@ const PORT = 3000;
 
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ limit: "50mb", extended: true }));
+
+// Path to uploaded files and static serving
+const UPLOADS_DIR = path.join(process.cwd(), "uploads");
+if (!fs.existsSync(UPLOADS_DIR)) {
+  fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+}
+app.use("/uploads", express.static(UPLOADS_DIR));
 
 // Path to data files
 const DATA_DIR = path.join(process.cwd(), "src", "data");
@@ -484,6 +492,48 @@ app.get("/api/debug-firebase", async (req, res) => {
 });
 
 // Proxy endpoints for Products
+app.post("/api/upload", async (req, res) => {
+  try {
+    const { base64, filename } = req.body;
+    if (!base64) {
+      return res.status(400).json({ error: "No base64 file data provided" });
+    }
+
+    const matches = base64.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
+    if (!matches || matches.length !== 3) {
+      return res.status(400).json({ error: "Invalid base64 format. Expected a Data URL (e.g. data:image/png;base64,...)" });
+    }
+
+    const mimeType = matches[1];
+    const rawData = matches[2];
+    const buffer = Buffer.from(rawData, "base64");
+
+    // Determine file extension
+    let ext = "png";
+    if (mimeType.includes("jpeg") || mimeType.includes("jpg")) {
+      ext = "jpg";
+    } else if (mimeType.includes("webp")) {
+      ext = "webp";
+    } else if (mimeType.includes("svg")) {
+      ext = "svg";
+    } else if (mimeType.includes("gif")) {
+      ext = "gif";
+    }
+
+    const baseName = filename ? filename.replace(/[^a-zA-Z0-9]/g, "_").slice(0, 50) : "image";
+    const cleanFilename = `img_${baseName}_${Date.now()}_${Math.floor(Math.random() * 10000)}.${ext}`;
+    const filePath = path.join(UPLOADS_DIR, cleanFilename);
+
+    fs.writeFileSync(filePath, buffer);
+
+    const relativeUrl = `/uploads/${cleanFilename}`;
+    console.log(`[Upload API]: Saved base64 image of size ${buffer.length} bytes to ${relativeUrl}`);
+    res.json({ url: relativeUrl });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || err.toString() });
+  }
+});
+
 app.get("/api/products", async (req, res) => {
   try {
     const list = await firestoreGetCollection("products");
@@ -500,22 +550,35 @@ app.post("/api/products/sync", async (req, res) => {
       return res.status(400).json({ error: "Expected array of products" });
     }
     
-    // Save/update products in the array
-    for (const p of dbProducts) {
-      await firestoreSetDoc("products", p.id, p);
-    }
-    
-    // Clean up deleted products
+    const firestoreDb = getDB();
+    if (!firestoreDb) throw new Error("Firestore DB is not initialized.");
+
+    // Retrieve current collection to see which documents to delete
     const currentList = await firestoreGetCollection("products");
     const updatedIds = dbProducts.map((p: any) => p.id);
+
+    const batch = writeBatch(firestoreDb);
+
+    // Set/update new and existing products
+    for (const p of dbProducts) {
+      const docRef = doc(firestoreDb, "products", p.id);
+      const cleaned = JSON.parse(JSON.stringify(p));
+      batch.set(docRef, cleaned, { merge: true });
+    }
+
+    // Delete removed products
     for (const docObj of currentList) {
       if (!updatedIds.includes(docObj.id)) {
-        await firestoreDeleteDoc("products", docObj.id);
+        const docRef = doc(firestoreDb, "products", docObj.id);
+        batch.delete(docRef);
       }
     }
-    
+
+    await batch.commit();
+    console.log(`[Products Sync]: Atomically synchronized ${dbProducts.length} products to Firestore (updates & deletions completed).`);
     res.json({ success: true });
   } catch (err: any) {
+    console.error("[Products Sync Error]: Atomic sync failed:", err);
     res.status(500).json({ error: err.message || err.toString() });
   }
 });
