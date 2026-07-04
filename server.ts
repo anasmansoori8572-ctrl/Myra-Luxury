@@ -66,13 +66,13 @@ const initFirebase = () => {
       config = JSON.parse(fs.readFileSync(configPath, "utf-8"));
     }
 
-    const apiKey = process.env.FIREBASE_API_KEY || config.apiKey || "AIzaSyCImJm7OxF68YHgLhUo1euYXteVfZ3YzkU";
-    const projectId = process.env.FIREBASE_PROJECT_ID || config.projectId || "protean-beanbag-42fsp";
-    const authDomain = process.env.FIREBASE_AUTH_DOMAIN || config.authDomain || "protean-beanbag-42fsp.firebaseapp.com";
-    const storageBucket = process.env.FIREBASE_STORAGE_BUCKET || config.storageBucket || "protean-beanbag-42fsp.firebasestorage.app";
-    const messagingSenderId = process.env.FIREBASE_MESSAGING_SENDER_ID || config.messagingSenderId || "953918959845";
-    const appId = process.env.FIREBASE_APP_ID || config.appId || "1:953918959845:web:142cda9f349bebf7d9e40c";
-    const databaseId = config.firestoreDatabaseId || process.env.FIREBASE_FIRESTORE_DATABASE_ID || "ai-studio-02945872-8484-41ed-b947-9c855091976d";
+    const apiKey = config.apiKey || process.env.FIREBASE_API_KEY || "AIzaSyCImJm7OxF68YHgLhUo1euYXteVfZ3YzkU";
+    const projectId = config.projectId || process.env.FIREBASE_PROJECT_ID || "protean-beanbag-42fsp";
+    const authDomain = config.authDomain || process.env.FIREBASE_AUTH_DOMAIN || "protean-beanbag-42fsp.firebaseapp.com";
+    const storageBucket = config.storageBucket || process.env.FIREBASE_STORAGE_BUCKET || "myra-luxury-9c49c.firebasestorage.app";
+    const messagingSenderId = config.messagingSenderId || process.env.FIREBASE_MESSAGING_SENDER_ID || "500396522177";
+    const appId = config.appId || process.env.FIREBASE_APP_ID || "1:500396522177:web:0f039c3e7b774f78e9b240";
+    const databaseId = config.firestoreDatabaseId || process.env.FIREBASE_FIRESTORE_DATABASE_ID || "(default)";
 
     const firebaseConfig = {
       apiKey,
