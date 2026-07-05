@@ -869,20 +869,21 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
     }
 
     // Image detection
-    const isCustomUrl = p.imagePlaceholderId.startsWith("http");
-    const isBase64 = p.imagePlaceholderId.startsWith("data:");
+    const placeholderStr = p.imagePlaceholderId || "";
+    const isCustomUrl = placeholderStr.startsWith("http");
+    const isBase64 = placeholderStr.startsWith("data:");
     
     if (isCustomUrl) {
       setImageType("custom_url");
-      setCustomImageUrl(p.imagePlaceholderId);
+      setCustomImageUrl(placeholderStr);
       setCustomImageBase64("");
     } else if (isBase64) {
       setImageType("upload");
-      setCustomImageBase64(p.imagePlaceholderId);
+      setCustomImageBase64(placeholderStr);
       setCustomImageUrl("");
     } else {
       setImageType("builtin");
-      setSelectedBuiltInPreset(p.imagePlaceholderId);
+      setSelectedBuiltInPreset(placeholderStr);
       setCustomImageUrl("");
       setCustomImageBase64("");
     }
@@ -1926,7 +1927,8 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                               filteredProductsList.map((p) => {
                                 const stockVal = (p as any).stock !== undefined ? (p as any).stock : 25;
                                 const isLowStock = stockVal <= 5;
-                                const isCustomVisual = p.imagePlaceholderId.startsWith("data:") || p.imagePlaceholderId.startsWith("http");
+                                const imgIdStr = p.imagePlaceholderId || "";
+                                const isCustomVisual = imgIdStr.startsWith("data:") || imgIdStr.startsWith("http");
 
                                 return (
                                   <tr key={p.id} className="hover:bg-stone-50/40 transition-colors">
@@ -1934,9 +1936,9 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                                       <div className="flex items-center gap-3">
                                         <div className={`w-12 h-12 rounded-xl flex items-center justify-center p-1 border border-stone-150 shrink-0 ${p.bgColorClass}`}>
                                           {isCustomVisual ? (
-                                            <img src={p.imagePlaceholderId} className="w-full h-full object-contain rounded-lg" referrerPolicy="no-referrer" />
+                                            <img src={imgIdStr} className="w-full h-full object-contain rounded-lg" referrerPolicy="no-referrer" />
                                           ) : (
-                                            <span className="text-[9px] font-mono text-stone-450 font-bold bg-white/70 px-1.5 py-0.5 rounded border border-stone-200 uppercase">{p.imagePlaceholderId.split("-").pop()?.slice(0, 3)}</span>
+                                            <span className="text-[9px] font-mono text-stone-450 font-bold bg-white/70 px-1.5 py-0.5 rounded border border-stone-200 uppercase">{imgIdStr.split("-").pop()?.slice(0, 3) || "IMG"}</span>
                                           )}
                                         </div>
                                         <div className="space-y-0.5">
