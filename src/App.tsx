@@ -627,9 +627,29 @@ export default function App() {
       } catch (err) {
         console.warn("[Firestore Sync Fallback]: Syncing products directly via Client SDK...", err);
         try {
+          const sanitizePayload = (val: any): any => {
+            if (val === undefined) return undefined;
+            if (val === null) return null;
+            if (Array.isArray(val)) {
+              return val.map(item => sanitizePayload(item)).filter(item => item !== undefined);
+            }
+            if (typeof val === "object") {
+              const cleaned: any = {};
+              for (const k of Object.keys(val)) {
+                const cleanedVal = sanitizePayload(val[k]);
+                if (cleanedVal !== undefined) {
+                  cleaned[k] = cleanedVal;
+                }
+              }
+              return cleaned;
+            }
+            return val;
+          };
+
           const batch = writeBatch(db);
           for (const p of dbProducts) {
-            batch.set(doc(db, "products", p.id), p, { merge: true });
+            const cleaned = sanitizePayload(p);
+            batch.set(doc(db, "products", p.id), cleaned, { merge: true });
           }
           const snap = await getDocs(collection(db, "products"));
           const currentList = snap.docs.map(d => ({ id: d.id }));

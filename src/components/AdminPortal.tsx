@@ -1060,9 +1060,35 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
       updatedList = products.map(p => p.id === editingProduct?.id ? newProduct : p);
     }
 
+    // Helper to recursively remove all undefined keys and values from Firestore payload
+    const sanitizeFirestorePayload = (val: any): any => {
+      if (val === undefined) {
+        return undefined;
+      }
+      if (val === null) {
+        return null;
+      }
+      if (Array.isArray(val)) {
+        return val
+          .map(item => sanitizeFirestorePayload(item))
+          .filter(item => item !== undefined);
+      }
+      if (typeof val === "object") {
+        const cleaned: any = {};
+        for (const key of Object.keys(val)) {
+          const cleanedVal = sanitizeFirestorePayload(val[key]);
+          if (cleanedVal !== undefined) {
+            cleaned[key] = cleanedVal;
+          }
+        }
+        return cleaned;
+      }
+      return val;
+    };
+
     // Direct Firestore write (Requirement 9 & 10)
     const productDocRef = doc(db, "products", newProduct.id);
-    const cleanedProduct = JSON.parse(JSON.stringify(newProduct));
+    const cleanedProduct = sanitizeFirestorePayload(newProduct);
 
     // Print the exact requested configuration details to the browser console
     console.log("PROJECT ID:", db.app.options.projectId);
