@@ -607,70 +607,10 @@ export default function App() {
     safeSetLocalStorage("myra_cart", JSON.stringify(cart));
   }, [cart]);
 
-  // Synchronize dbProducts changes to Firestore
+  // Synchronize dbProducts changes to local storage
   useEffect(() => {
     safeSetLocalStorage("myra_products", JSON.stringify(dbProducts));
-    
-    if (!isFirestoreLoaded) return;
-    if (!isLocalChange.current) return;
-    
-    const syncProducts = async () => {
-      try {
-        console.log("[Firestore Sync]: Syncing products catalog via proxy API...");
-        const res = await fetch("/api/products/sync", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(dbProducts)
-        });
-        if (!res.ok) throw new Error(await res.text());
-        console.log("[Firestore Sync]: Products catalog atomically synced successfully!");
-      } catch (err) {
-        console.warn("[Firestore Sync Fallback]: Syncing products directly via Client SDK...", err);
-        try {
-          const sanitizePayload = (val: any): any => {
-            if (val === undefined) return undefined;
-            if (val === null) return null;
-            if (Array.isArray(val)) {
-              return val.map(item => sanitizePayload(item)).filter(item => item !== undefined);
-            }
-            if (typeof val === "object") {
-              const cleaned: any = {};
-              for (const k of Object.keys(val)) {
-                const cleanedVal = sanitizePayload(val[k]);
-                if (cleanedVal !== undefined) {
-                  cleaned[k] = cleanedVal;
-                }
-              }
-              return cleaned;
-            }
-            return val;
-          };
-
-          const batch = writeBatch(db);
-          for (const p of dbProducts) {
-            const cleaned = sanitizePayload(p);
-            batch.set(doc(db, "products", p.id), cleaned, { merge: true });
-          }
-          const snap = await getDocs(collection(db, "products"));
-          const currentList = snap.docs.map(d => ({ id: d.id }));
-          const updatedIds = dbProducts.map((p: any) => p.id);
-          for (const docObj of currentList) {
-            if (!updatedIds.includes(docObj.id)) {
-              batch.delete(doc(db, "products", docObj.id));
-            }
-          }
-          await batch.commit();
-          console.log("[Firestore Sync Fallback]: Atomic fallback sync succeeded.");
-        } catch (fallbackErr) {
-          console.error("Direct client products sync failed too:", fallbackErr);
-        }
-      } finally {
-        // Reset the flag ONLY after the synchronization is fully complete
-        isLocalChange.current = false;
-      }
-    };
-    syncProducts();
-  }, [dbProducts, isFirestoreLoaded]);
+  }, [dbProducts]);
 
   // Real-time products listener to update other active users' clients
   useEffect(() => {
@@ -3282,8 +3222,36 @@ export default function App() {
         onAddToCart={handleAddToCart}
         isWishlisted={activeDetailProduct ? isWishlisted(activeDetailProduct.id) : false}
         onToggleWishlist={activeDetailProduct ? () => toggleWishlist(activeDetailProduct.id) : undefined}
-        onUpdateProduct={(updatedProd) => {
+        onUpdateProduct={async (updatedProd) => {
           isLocalChange.current = true;
+          try {
+            const sanitizePayload = (val: any): any => {
+              if (val === undefined) return undefined;
+              if (val === null) return null;
+              if (Array.isArray(val)) {
+                return val.map(item => sanitizePayload(item)).filter(item => item !== undefined);
+              }
+              if (typeof val === "object") {
+                const cleaned: any = {};
+                for (const k of Object.keys(val)) {
+                  const cleanedVal = sanitizePayload(val[k]);
+                  if (cleanedVal !== undefined) {
+                    cleaned[k] = cleanedVal;
+                  }
+                }
+                return cleaned;
+              }
+              return val;
+            };
+
+            console.log(`[Firestore Review Sync] Updating product review details directly in Firestore for ID: "${updatedProd.id}"`);
+            const productDocRef = doc(db, "products", updatedProd.id);
+            await setDoc(productDocRef, sanitizePayload(updatedProd), { merge: true });
+            console.log("[Firestore Review Sync Success] Product reviews updated successfully.");
+          } catch (err: any) {
+            console.error("[Firestore Review Sync Error] Failed to update product reviews in Firestore:", err);
+            triggerToast(`Firestore review update failed: ${err.message || err.toString()}`);
+          }
           setDbProducts(prev => prev.map(p => p.id === updatedProd.id ? updatedProd : p));
           setActiveDetailProduct(updatedProd);
         }}

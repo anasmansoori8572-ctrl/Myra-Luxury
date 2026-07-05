@@ -572,46 +572,6 @@ app.get("/api/products", async (req, res) => {
   }
 });
 
-app.post("/api/products/sync", async (req, res) => {
-  try {
-    const dbProducts = req.body;
-    if (!Array.isArray(dbProducts)) {
-      return res.status(400).json({ error: "Expected array of products" });
-    }
-    
-    const firestoreDb = getDB();
-    if (!firestoreDb) throw new Error("Firestore DB is not initialized.");
-
-    // Retrieve current collection to see which documents to delete
-    const currentList = await firestoreGetCollection("products");
-    const updatedIds = dbProducts.map((p: any) => p.id);
-
-    const batch = writeBatch(firestoreDb);
-
-    // Set/update new and existing products
-    for (const p of dbProducts) {
-      const docRef = doc(firestoreDb, "products", p.id);
-      const cleaned = JSON.parse(JSON.stringify(p));
-      batch.set(docRef, cleaned, { merge: true });
-    }
-
-    // Delete removed products
-    for (const docObj of currentList) {
-      if (!updatedIds.includes(docObj.id)) {
-        const docRef = doc(firestoreDb, "products", docObj.id);
-        batch.delete(docRef);
-      }
-    }
-
-    await batch.commit();
-    console.log(`[Products Sync]: Atomically synchronized ${dbProducts.length} products to Firestore (updates & deletions completed).`);
-    res.json({ success: true });
-  } catch (err: any) {
-    console.error("[Products Sync Error]: Atomic sync failed:", err);
-    res.status(500).json({ error: err.message || err.toString() });
-  }
-});
-
 // Proxy endpoints for Locations
 app.get("/api/locations", async (req, res) => {
   try {

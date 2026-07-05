@@ -5,7 +5,7 @@ import { getPreseededReviews } from "./ProductDetailModal";
 import { MediaSettingsTab } from "./MediaSettingsTab";
 import { uploadToCloudinary } from "../cloudinary";
 import { db } from "../lib/firebase";
-import { collection, doc, setDoc, getDocs, getDoc, deleteDoc } from "firebase/firestore";
+import { collection, doc, setDoc, getDocs, getDoc, deleteDoc, writeBatch } from "firebase/firestore";
 import { 
   X, 
   Trash2, 
@@ -75,6 +75,32 @@ interface AdminPortalProps {
   seoData?: Record<string, SEOMetadata>;
   onSeoDataChange?: (newSeoData: Record<string, SEOMetadata>) => void;
 }
+
+// Helper to recursively remove all undefined keys and values from Firestore payload
+export const sanitizeFirestorePayload = (val: any): any => {
+  if (val === undefined) {
+    return undefined;
+  }
+  if (val === null) {
+    return null;
+  }
+  if (Array.isArray(val)) {
+    return val
+      .map(item => sanitizeFirestorePayload(item))
+      .filter(item => item !== undefined);
+  }
+  if (typeof val === "object") {
+    const cleaned: any = {};
+    for (const key of Object.keys(val)) {
+      const cleanedVal = sanitizeFirestorePayload(val[key]);
+      if (cleanedVal !== undefined) {
+        cleaned[key] = cleanedVal;
+      }
+    }
+    return cleaned;
+  }
+  return val;
+};
 
 // Initial default password
 const ADMIN_PASSWORD = "admin";
@@ -1060,32 +1086,6 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
       updatedList = products.map(p => p.id === editingProduct?.id ? newProduct : p);
     }
 
-    // Helper to recursively remove all undefined keys and values from Firestore payload
-    const sanitizeFirestorePayload = (val: any): any => {
-      if (val === undefined) {
-        return undefined;
-      }
-      if (val === null) {
-        return null;
-      }
-      if (Array.isArray(val)) {
-        return val
-          .map(item => sanitizeFirestorePayload(item))
-          .filter(item => item !== undefined);
-      }
-      if (typeof val === "object") {
-        const cleaned: any = {};
-        for (const key of Object.keys(val)) {
-          const cleanedVal = sanitizeFirestorePayload(val[key]);
-          if (cleanedVal !== undefined) {
-            cleaned[key] = cleanedVal;
-          }
-        }
-        return cleaned;
-      }
-      return val;
-    };
-
     // Direct Firestore write (Requirement 9 & 10)
     const productDocRef = doc(db, "products", newProduct.id);
     const cleanedProduct = sanitizeFirestorePayload(newProduct);
@@ -1139,10 +1139,20 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
     showConfirm(
       "Retire Product From Catalogue",
       `Are you sure you want to retire [${productName}] from the Boutique catalogue? This cannot be undone automatically.`,
-      () => {
-        const updated = products.filter(p => p.id !== productId);
-        onProductsChange(updated);
-        triggerToast(`[${productName}] has been gracefully removed from collection.`);
+      async () => {
+        try {
+          console.log(`[Firestore Delete] Deleting product from Firestore: "products/${productId}"`);
+          const productDocRef = doc(db, "products", productId);
+          await deleteDoc(productDocRef);
+          console.log(`[Firestore Delete Success] Deleted "products/${productId}" successfully.`);
+          
+          const updated = products.filter(p => p.id !== productId);
+          onProductsChange(updated);
+          triggerToast(`[${productName}] has been gracefully removed from collection.`);
+        } catch (err: any) {
+          console.error(`[Firestore Delete Error] Failed to delete "products/${productId}":`, err);
+          triggerToast(`Failed to delete from Firestore: ${err.message || err.toString()}`);
+        }
       },
       "Retire Product",
       true
@@ -1154,13 +1164,40 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
     showConfirm(
       "Reset Database Catalog",
       "WARNING: This will discard ALL custom added, edited, or deleted products and reset the boutique to original defaults. Continue?",
-      () => {
-        localStorage.removeItem("myra_products");
-        onProductsChange(seedProducts);
-        // Allow sync to complete, then reload to pull fresh synced data
-        setTimeout(() => {
-          window.location.reload();
-        }, 800);
+      async () => {
+        try {
+          triggerToast("Purging catalog and restoring defaults... Please wait.");
+          console.log("[Firestore Reset] Fetching existing documents to purge...");
+          const snap = await getDocs(collection(db, "products"));
+          const batch = writeBatch(db);
+          
+          // Delete all current documents
+          for (const d of snap.docs) {
+            batch.delete(doc(db, "products", d.id));
+          }
+          
+          // Write default seed products
+          console.log(`[Firestore Reset] Adding ${seedProducts.length} seed products...`);
+          for (const p of seedProducts) {
+            const docRef = doc(db, "products", p.id);
+            const cleaned = sanitizeFirestorePayload(p);
+            batch.set(docRef, cleaned);
+          }
+          
+          await batch.commit();
+          console.log("[Firestore Reset Success] Catalog successfully reset to default seeds in Firestore!");
+          
+          localStorage.removeItem("myra_products");
+          onProductsChange(seedProducts);
+          triggerToast("Database catalog reset successfully!");
+          
+          setTimeout(() => {
+            window.location.reload();
+          }, 800);
+        } catch (err: any) {
+          console.error("[Firestore Reset Error] Reset catalog failed:", err);
+          triggerToast(`Catalog reset failed: ${err.message || err.toString()}`);
+        }
       },
       "Reset Defaults",
       true
@@ -3817,7 +3854,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                                         message: `Are you absolutely certain you want to purge this review by customer "${review.author}"? This review will be removed from the store and the average rating score of this product will be recomputed immediately.`,
                                         isDanger: true,
                                         confirmLabel: "Delete Review",
-                                        onConfirm: () => {
+                                        onConfirm: async () => {
                                           const reviewsOfProd = selectedProductForReviews.reviews || getPreseededReviews(selectedProductForReviews.id, selectedProductForReviews.category);
                                           const filteredList = reviewsOfProd.filter(r => r.id !== review.id);
                                           
@@ -3836,6 +3873,15 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
                                             rating: finalAvg,
                                             reviewsCount: filteredList.length
                                           };
+
+                                          try {
+                                            const docRef = doc(db, "products", selectedProductForReviews.id);
+                                            await setDoc(docRef, sanitizeFirestorePayload(nextProductInfo), { merge: true });
+                                            console.log(`[Firestore Review Sync] Successfully deleted review in Firestore for product ${selectedProductForReviews.id}`);
+                                          } catch (fErr: any) {
+                                            console.error("Failed to update product review in Firestore:", fErr);
+                                            triggerToast(`Firestore update failed: ${fErr.message || fErr.toString()}`);
+                                          }
 
                                           const nextProductsArray = products.map(p => p.id === selectedProductForReviews.id ? nextProductInfo : p);
                                           onProductsChange(nextProductsArray);
