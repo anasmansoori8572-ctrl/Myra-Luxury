@@ -6,6 +6,7 @@ import nodemailer from "nodemailer";
 import Razorpay from "razorpay";
 import dotenv from "dotenv";
 import crypto from "crypto";
+import { fileURLToPath } from "url";
 
 // Firebase Web SDK Imports
 import { initializeApp, getApps, getApp } from "firebase/app";
@@ -61,14 +62,42 @@ const initFirebase = () => {
   
   try {
     let config: any = {};
-    const configPath = path.join(process.cwd(), "firebase-applet-config.json");
-    if (fs.existsSync(configPath)) {
-      config = JSON.parse(fs.readFileSync(configPath, "utf-8"));
+    let currentDir = process.cwd();
+    try {
+      if (typeof __dirname !== "undefined") {
+        currentDir = __dirname;
+      } else {
+        currentDir = path.dirname(fileURLToPath(import.meta.url));
+      }
+    } catch (e) {
+      // ignore fallback
     }
 
-    const apiKey = config.apiKey || process.env.FIREBASE_API_KEY || "AIzaSyCImJm7OxF68YHgLhUo1euYXteVfZ3YzkU";
-    const projectId = config.projectId || process.env.FIREBASE_PROJECT_ID || "protean-beanbag-42fsp";
-    const authDomain = config.authDomain || process.env.FIREBASE_AUTH_DOMAIN || "protean-beanbag-42fsp.firebaseapp.com";
+    const possiblePaths = [
+      path.join(process.cwd(), "firebase-applet-config.json"),
+      path.join(currentDir, "firebase-applet-config.json"),
+      path.join(currentDir, "..", "firebase-applet-config.json"),
+      path.join(currentDir, "../..", "firebase-applet-config.json")
+    ];
+
+    let foundConfigPath = "";
+    for (const p of possiblePaths) {
+      if (fs.existsSync(p)) {
+        foundConfigPath = p;
+        break;
+      }
+    }
+
+    if (foundConfigPath) {
+      console.log(`[Firebase Initializer] Found configuration file at: ${foundConfigPath}`);
+      config = JSON.parse(fs.readFileSync(foundConfigPath, "utf-8"));
+    } else {
+      console.warn(`[Firebase Initializer] firebase-applet-config.json not found in search paths. Using robust environment and default fallbacks.`);
+    }
+
+    const apiKey = config.apiKey || process.env.FIREBASE_API_KEY || "AIzaSyAfgxVzb2KrKm805ANK7h6HVRyRc0EVr8s";
+    const projectId = config.projectId || process.env.FIREBASE_PROJECT_ID || "myra-luxury-9c49c";
+    const authDomain = config.authDomain || process.env.FIREBASE_AUTH_DOMAIN || "myra-luxury-9c49c.firebaseapp.com";
     const storageBucket = config.storageBucket || process.env.FIREBASE_STORAGE_BUCKET || "myra-luxury-9c49c.firebasestorage.app";
     const messagingSenderId = config.messagingSenderId || process.env.FIREBASE_MESSAGING_SENDER_ID || "500396522177";
     const appId = config.appId || process.env.FIREBASE_APP_ID || "1:500396522177:web:0f039c3e7b774f78e9b240";
@@ -450,9 +479,9 @@ app.get("/api/debug-firebase", async (req, res) => {
       fileConfig = JSON.parse(fs.readFileSync(configPath, "utf-8"));
     }
 
-    const apiKey = process.env.FIREBASE_API_KEY || fileConfig.apiKey;
-    const projectId = process.env.FIREBASE_PROJECT_ID || fileConfig.projectId;
-    const databaseId = fileConfig.firestoreDatabaseId || process.env.FIREBASE_FIRESTORE_DATABASE_ID;
+    const apiKey = process.env.FIREBASE_API_KEY || fileConfig.apiKey || "AIzaSyAfgxVzb2KrKm805ANK7h6HVRyRc0EVr8s";
+    const projectId = process.env.FIREBASE_PROJECT_ID || fileConfig.projectId || "myra-luxury-9c49c";
+    const databaseId = fileConfig.firestoreDatabaseId || process.env.FIREBASE_FIRESTORE_DATABASE_ID || "(default)";
 
     const firestoreDb = getDB();
     if (!firestoreDb) {

@@ -8,6 +8,7 @@ import { ProfileModal } from "./components/ProfileModal";
 import { AdminPortal } from "./components/AdminPortal";
 import { useAuth } from "./lib/authContext";
 import { db } from "./lib/firebase";
+import firebaseConfig from "../firebase-applet-config.json";
 import { collection, doc, getDocs, getDoc, setDoc, deleteDoc, onSnapshot, writeBatch } from "firebase/firestore";
 import { getVersionedCloudinaryUrl } from "./cloudinary";
 import { 
@@ -433,23 +434,39 @@ export default function App() {
         console.log("[Firestore Sync]: Fetching boutique collections from Cloud DB via proxy...");
         // 1. Fetch Products
         let productsList: Product[] = [];
+        let fetchedFromFirestore = false;
+        let fetchSource = "offline_cache";
+
         try {
           const prodRes = await fetch("/api/products");
           if (prodRes.ok) {
             productsList = await prodRes.json();
+            fetchedFromFirestore = true;
+            fetchSource = "Firestore Server Proxy (/api/products)";
           } else {
-            throw new Error("Proxy products fetch failed");
+            throw new Error(`Proxy products fetch failed with status: ${prodRes.status}`);
           }
         } catch (err) {
           console.warn("[Firestore Sync Fallback]: Fetching products directly from Client SDK...", err);
           try {
             const snap = await getDocs(collection(db, "products"));
             productsList = snap.docs.map(d => ({ id: d.id, ...d.data() })) as Product[];
+            fetchedFromFirestore = true;
+            fetchSource = "Direct Firestore Client SDK";
           } catch (fallbackErr) {
             console.error("Direct client products fetch failed too:", fallbackErr);
           }
         }
-        if (Array.isArray(productsList) && productsList.length > 0) {
+
+        // Production Audit Log (Requirement 8)
+        const currentProjectId = firebaseConfig.projectId || "myra-luxury-9c49c";
+        console.log(`[Firestore Production Audit Log]
+  - Firestore Project ID: "${currentProjectId}"
+  - Products Fetched: ${productsList.length}
+  - Data Source: ${fetchedFromFirestore ? fetchSource : "Local Fallback State (Warning: Offline)"}
+        `);
+
+        if (fetchedFromFirestore && Array.isArray(productsList)) {
           setDbProducts(productsList);
           localStorage.setItem("myra_products", JSON.stringify(productsList));
         }
@@ -649,18 +666,16 @@ export default function App() {
       }
 
       const productsList = snapshot.docs.map(d => ({ id: d.id, ...d.data() })) as Product[];
-      if (productsList.length > 0) {
-        setDbProducts((prevProducts) => {
-          const prevJson = JSON.stringify(prevProducts);
-          const nextJson = JSON.stringify(productsList);
-          if (prevJson !== nextJson) {
-            console.log("[Firestore Sync]: Real-time product inventory updated from Firestore.");
-            localStorage.setItem("myra_products", nextJson);
-            return productsList;
-          }
-          return prevProducts;
-        });
-      }
+      setDbProducts((prevProducts) => {
+        const prevJson = JSON.stringify(prevProducts);
+        const nextJson = JSON.stringify(productsList);
+        if (prevJson !== nextJson) {
+          console.log(`[Firestore Sync]: Real-time product inventory updated from Firestore (${productsList.length} products).`);
+          localStorage.setItem("myra_products", nextJson);
+          return productsList;
+        }
+        return prevProducts;
+      });
     }, (error) => {
       console.error("Real-time products snapshot failed:", error);
     });
