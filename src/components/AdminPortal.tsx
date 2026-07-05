@@ -968,7 +968,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
   };
 
   // Product submission
-  const handleSaveProduct = (e: React.FormEvent) => {
+  const handleSaveProduct = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!prodName.trim()) {
       triggerToast("Please provide an elegant product name.");
@@ -1056,10 +1056,52 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
     let updatedList: Product[];
     if (formMode === "create") {
       updatedList = [newProduct, ...products];
-      triggerToast(`New product uploaded successfully`);
     } else {
       updatedList = products.map(p => p.id === editingProduct?.id ? newProduct : p);
-      triggerToast(`Updation successful`);
+    }
+
+    // Direct Firestore write (Requirement 9 & 10)
+    const productDocRef = doc(db, "products", newProduct.id);
+    const cleanedProduct = JSON.parse(JSON.stringify(newProduct));
+
+    // Print the exact requested configuration details to the browser console
+    console.log("PROJECT ID:", db.app.options.projectId);
+    console.log("FIRESTORE DATABASE:", (db as any).databaseId || (db.app.options as any).databaseId || "(default)");
+    console.log("DOCUMENT PATH:", productDocRef.path);
+    console.log("PRODUCT ID:", newProduct.id);
+    console.log("FIREBASE APP CONFIG:", db.app.options);
+
+    console.log(`[Firestore Write Start] Attempting to write product to collection: "products"
+  - Path: "products/${newProduct.id}"
+  - Connection Target: Firebase Project ID: "${db.app.options.projectId || "myra-luxury-9c49c"}"
+  - Payload:`, cleanedProduct);
+
+    try {
+      await setDoc(productDocRef, cleanedProduct);
+      console.log(`[Firestore Write Success] Successfully wrote product with ID: "${newProduct.id}" to "products" collection.`);
+      
+      // Verification check (Requirement 9 & 10)
+      console.log("[Firestore Verification] Reading document back immediately...");
+      const verify = await getDoc(productDocRef);
+      console.log("DOCUMENT EXISTS:", verify.exists());
+      console.log("DOCUMENT DATA:", verify.data());
+
+      if (!verify.exists()) {
+        const errorMsg = "Verification failed! The setDoc call completed, but the document does not exist in Firestore. Please check your Firestore security rules, project ID, and sync status.";
+        console.error(`[Firestore Verification Failure] ${errorMsg}`);
+        triggerToast("Firestore save verified: FAILED (Doc not found)");
+        throw new Error(errorMsg);
+      }
+
+      if (formMode === "create") {
+        triggerToast(`New product uploaded successfully`);
+      } else {
+        triggerToast(`Updation successful`);
+      }
+    } catch (err: any) {
+      console.error(`[Firestore Write Error] Failed to write product with ID: "${newProduct.id}" to "products" collection.`, err);
+      triggerToast(`Firestore save failed: ${err.message || err.toString()}`);
+      throw err; // Throw any Firestore error instead of silently ignoring it (Requirement 8)
     }
 
     onProductsChange(updatedList);
