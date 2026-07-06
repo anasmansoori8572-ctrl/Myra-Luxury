@@ -450,6 +450,8 @@ export default function App() {
           console.warn("[Firestore Sync Fallback]: Fetching products directly from Client SDK...", err);
           try {
             const snap = await getDocs(collection(db, "products"));
+            console.log("Fetched Docs:", snap.docs.length);
+            console.log("Fetched IDs:", snap.docs.map(d => d.id));
             productsList = snap.docs.map(d => ({ id: d.id, ...d.data() })) as Product[];
             fetchedFromFirestore = true;
             fetchSource = "Direct Firestore Client SDK";
@@ -626,6 +628,8 @@ export default function App() {
       }
 
       const productsList = snapshot.docs.map(d => ({ id: d.id, ...d.data() })) as Product[];
+      console.log("Snapshot Docs:", snapshot.docs.length);
+      console.log("Snapshot IDs:", snapshot.docs.map(d => d.id));
       setDbProducts((prevProducts) => {
         const prevJson = JSON.stringify(prevProducts);
         const nextJson = JSON.stringify(productsList);

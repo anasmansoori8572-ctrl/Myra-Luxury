@@ -590,11 +590,14 @@ app.post("/api/locations/sync", async (req, res) => {
     }
     
     for (const l of dbLocations) {
-      await firestoreSetDoc("locations", l.id, l);
+      if (!l || typeof l !== "object") continue;
+      const docId = l.id || `loc-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+      l.id = docId;
+      await firestoreSetDoc("locations", docId, l);
     }
     
     const currentList = await firestoreGetCollection("locations");
-    const updatedIds = dbLocations.map((l: any) => l.id);
+    const updatedIds = dbLocations.filter((l: any) => l && typeof l === "object" && l.id).map((l: any) => l.id);
     for (const docObj of currentList) {
       if (!updatedIds.includes(docObj.id)) {
         await firestoreDeleteDoc("locations", docObj.id);
@@ -664,11 +667,14 @@ app.post("/api/messages/sync", async (req, res) => {
     }
     
     for (const m of messages) {
-      await firestoreSetDoc("messages", m.id, m);
+      if (!m || typeof m !== "object") continue;
+      const docId = m.id || `msg-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+      m.id = docId;
+      await firestoreSetDoc("messages", docId, m);
     }
     
     const currentList = await firestoreGetCollection("messages");
-    const updatedIds = messages.map((m: any) => m.id);
+    const updatedIds = messages.filter((m: any) => m && typeof m === "object" && m.id).map((m: any) => m.id);
     for (const docObj of currentList) {
       if (!updatedIds.includes(docObj.id)) {
         await firestoreDeleteDoc("messages", docObj.id);
